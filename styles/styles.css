@@ -620,15 +620,6 @@ body {
   background: var(--muted);
 }
 
-.project-link-primary {
-  background: var(--primary);
-  color: var(--background);
-}
-
-.project-link-primary:hover {
-  background: var(--primary-dark);
-}
-
 /* Contact Section */
 .contact {
   padding: var(--section-padding);

@@ -288,10 +288,6 @@ function populateProjects() {
                         ${icons.github}
                         Código
                     </a>
-                    <a href="${project.demo}" target="_blank" class="project-link project-link-primary">
-                        ${icons.external}
-                        Demo
-                    </a>
                 </div>
             </div>
         `
