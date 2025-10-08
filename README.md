@@ -11,7 +11,7 @@ Este projeto foi construído do zero utilizando as seguintes tecnologias web fun
 *   **HTML5:** Para a estrutura e semântica do conteúdo.
 *   **CSS3:** Para estilização, layout responsivo e animações.
 *   **JavaScript (ES6+):** Para a interatividade, manipulação do DOM e carregamento dinâmico de conteúdo.
-OLALALA
+
 ## ✨ Funcionalidades
 
 - **Design Responsivo:** Totalmente adaptável para visualização em desktops, tablets e celulares.
