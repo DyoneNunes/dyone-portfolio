@@ -1,0 +1,13 @@
+node_modules
+dist
+backend
+.env
+.env.*
+!.env.example
+.git
+.claude
+*.log
+
+# GLBs originais/backup não entram na imagem (85MB) —
+# o app só serve o public/meu_cyberpunk.glb (comprimido)
+src/assets/*.glb

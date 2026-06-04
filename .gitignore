@@ -1,0 +1,25 @@
+# Dependências e build
+node_modules
+dist
+dist-ssr
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor / SO
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.local
+
+# Segredos (NUNCA commitar)
+.env
+.env.*
+!.env.example
+
+# Modelos 3D originais (27MB + 58MB) ficam locais —
+# o app usa apenas o public/meu_cyberpunk.glb (Draco, 7.9MB)
+src/assets/*.glb
