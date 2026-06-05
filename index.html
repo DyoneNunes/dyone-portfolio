@@ -4,12 +4,56 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#050505" />
-    <meta name="description" content="Portfólio interativo 3D — projetos de SaaS, dados e open source." />
+    <!-- SEO -->
+    <meta
+      name="description"
+      content="Portfólio de Dyone Nunes Andrade, Desenvolvedor Fullstack e DevOps. Especialista em Python, React, Docker e PostgreSQL — SaaS, infraestrutura e experiências 3D. Conheça meus projetos."
+    />
+    <meta
+      name="keywords"
+      content="Dyone, Dyone Andrade, Dyone Nunes Andrade, Desenvolvedor, Fullstack, DevOps, Python, React, Docker, PostgreSQL, Vitoria, ES, Quilombus Network"
+    />
+    <link rel="canonical" href="https://dyonedev.com.br/" />
+
+    <!-- Open Graph / Twitter (preview ao compartilhar o link) -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://dyonedev.com.br/" />
+    <meta property="og:title" content="Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps" />
+    <meta
+      property="og:description"
+      content="Python, React, Docker e PostgreSQL — SaaS, infraestrutura e experiências 3D interativas."
+    />
+    <meta property="og:image" content="https://dyonedev.com.br/og-image.png" />
+    <meta property="og:locale" content="pt_BR" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps" />
+    <meta
+      name="twitter:description"
+      content="Python, React, Docker e PostgreSQL — SaaS, infraestrutura e experiências 3D interativas."
+    />
+    <meta name="twitter:image" content="https://dyonedev.com.br/og-image.png" />
     <!-- Favicon (gerado a partir de public/logo.jpeg) -->
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
-    <title>Meu Portfólio</title>
+    <title>Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps</title>
+    <!-- Dados estruturados: Person (reforça a indexação do nome no Google) -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Person",
+        "name": "Dyone Nunes Andrade",
+        "alternateName": "Dyone Dev",
+        "jobTitle": "Desenvolvedor Fullstack e DevOps",
+        "url": "https://dyonedev.com.br",
+        "worksFor": { "@type": "Organization", "name": "Quilombus Network" },
+        "knowsAbout": ["Python", "React", "Docker", "PostgreSQL", "DevOps", "Three.js"],
+        "sameAs": [
+          "https://github.com/DyoneNunes",
+          "https://www.linkedin.com/in/dyone-andrade-0340462b6/"
+        ]
+      }
+    </script>
     <!-- Tipografia Cyberpunk: Orbitron (títulos) + JetBrains Mono (corpo/terminal) -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -17,6 +61,12 @@
       href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Orbitron:wght@600;700;900&display=swap"
       rel="stylesheet"
     />
+    <!-- Umami Analytics — eventos customizados injetados nos CTAs do App.jsx -->
+    <script
+      defer
+      src="https://cloud.umami.is/script.js"
+      data-website-id="4f0a542d-de18-46ec-882d-4c9534151680"
+    ></script>
   </head>
   <body>
     <div id="root"></div>

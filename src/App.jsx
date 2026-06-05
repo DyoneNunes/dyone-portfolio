@@ -29,6 +29,7 @@ const meusProjetos = [
     descricao: 'SaaS HealthTech focado em conformidade psicossocial (NR-01).',
     tipo: 'Startup / SaaS',
     url: 'https://nirmind.com.br/',
+    evento: 'Projeto-NirMind-Click',
     tags: ['HealthTech', 'SaaS'],
   },
   {
@@ -37,6 +38,7 @@ const meusProjetos = [
     descricao: 'Projeto Integrador 3 (FAESA) - Monitoramento ambiental nacional em tempo real (API FIRMS NASA).',
     tipo: 'Acadêmico / Dados',
     url: 'https://github.com/DyoneNunes/Projeto-Integrador-III',
+    evento: 'Projeto-Sentinela-Click',
     tags: ['Python 38%', 'TypeScript 28%', 'C++ 13%', 'Docker'],
   },
   {
@@ -45,6 +47,7 @@ const meusProjetos = [
     descricao: 'Projeto Integrador 3 (FAESA) - Gerenciamento de memória como serviço.',
     tipo: 'Acadêmico / Baixo Nível',
     url: 'https://github.com/DyoneNunes/Projeto-Integrador-III',
+    evento: 'Projeto-MaaS-Click',
     tags: ['Python', 'TypeScript', 'C++', 'CMake'],
   },
   {
@@ -53,6 +56,7 @@ const meusProjetos = [
     descricao: 'Projeto Integrador 2 (FAESA) - Plataforma dedicada ao monitoramento de stress.',
     tipo: 'Acadêmico / Backend',
     url: 'https://github.com/DyoneNunes/banco_de_dados_calmou',
+    evento: 'Projeto-Calmou-Click',
     tags: ['Python 95%', 'PLpgSQL', 'Docker'],
   },
   {
@@ -61,6 +65,7 @@ const meusProjetos = [
     descricao: 'Aplicativo prático para controle financeiro e gestão de despesas.',
     tipo: 'Projeto Pessoal',
     url: 'https://meudim.com.br/',
+    evento: 'Projeto-MeuDim-Click',
     tags: ['FinTech', 'SaaS'],
   },
   {
@@ -69,6 +74,7 @@ const meusProjetos = [
     descricao: 'Implementação de Árvore Binária de Busca.',
     tipo: 'Colaboração (FAESA)',
     url: 'https://github.com/nicholetzs/amarelo',
+    evento: 'Projeto-Amarelo-Click',
     tags: ['Java', 'Estrutura de Dados'],
   },
 ]
@@ -85,15 +91,15 @@ const techStacks = [
 ]
 
 const NAV_ANCORAS = [
-  { id: 'sobre', rotulo: '// about' },
-  { id: 'stack', rotulo: '// tech' },
-  { id: 'projetos', rotulo: '// work' },
-  { id: 'contato', rotulo: '// contact' },
+  { id: 'sobre', rotulo: '// about', evento: 'Nav-About-Click' },
+  { id: 'stack', rotulo: '// tech', evento: 'Nav-Tech-Click' },
+  { id: 'projetos', rotulo: '// work', evento: 'Nav-Work-Click' },
+  { id: 'contato', rotulo: '// contact', evento: 'Nav-Contact-Click' },
 ]
 
 const minhasRedes = [
-  { rotulo: '[ github ]', url: 'https://github.com/DyoneNunes' },
-  { rotulo: '[ linkedin ]', url: 'https://www.linkedin.com/in/dyone-andrade-0340462b6/' },
+  { rotulo: '[ github ]', url: 'https://github.com/DyoneNunes', evento: 'Contato-GitHub-Click' },
+  { rotulo: '[ linkedin ]', url: 'https://www.linkedin.com/in/dyone-andrade-0340462b6/', evento: 'Contato-LinkedIn-Click' },
 ]
 
 /* ============================================================
@@ -294,6 +300,10 @@ function SecaoHero() {
           <br />
           {"I'M DYONE"}
           <span style={E.cursorPiscante}>_</span>
+          {/* nome completo p/ SEO e leitores de tela — invisível no visual */}
+          <span className="visualmente-oculto">
+            {' — Dyone Nunes Andrade, Desenvolvedor Fullstack e DevOps'}
+          </span>
         </h1>
       </RevelarAoScroll>
 
@@ -451,6 +461,7 @@ function SecaoProjetos() {
                 href={projeto.url}
                 target="_blank"
                 rel="noopener noreferrer"
+                data-umami-event={projeto.evento}
                 style={E.itemHolo}
                 initial={{ opacity: 0, y: 50 }}
                 whileInView={{
@@ -646,6 +657,7 @@ function SecaoContato() {
             <motion.button
               type="submit"
               disabled={estado === 'enviando'}
+              data-umami-event="Contato-Form-Submit"
               style={E.botaoConexao}
               whileHover={{
                 boxShadow: `0 0 26px -6px ${NEON_CIANO}`,
@@ -680,6 +692,7 @@ function SecaoContato() {
                 href={rede.url}
                 target="_blank"
                 rel="noopener noreferrer"
+                data-umami-event={rede.evento}
                 style={E.contatoLink}
                 whileHover={{ color: NEON_CIANO, textShadow: `0 0 12px ${NEON_CIANO}`, y: -1 }}
               >
@@ -715,6 +728,7 @@ function RodapeHud() {
       <motion.button
         type="button"
         onClick={voltarAoTopo}
+        data-umami-event="Footer-VoltarTopo-Click"
         style={E.rodapeVoltar}
         whileHover={{ color: NEON_CIANO, textShadow: `0 0 12px ${NEON_CIANO}`, y: -1 }}
         whileTap={{ scale: 0.96 }}
@@ -789,6 +803,7 @@ function InterfaceUI({ progressoScroll }) {
         <motion.button
           style={E.logo}
           onClick={() => irPara('topo')}
+          data-umami-event="Header-Logo-Click"
           whileHover={{ textShadow: `0 0 18px ${NEON_CIANO}` }}
           whileTap={{ scale: 0.95 }}
         >
@@ -800,6 +815,7 @@ function InterfaceUI({ progressoScroll }) {
             <motion.button
               key={item.id}
               onClick={() => irPara(item.id)}
+              data-umami-event={item.evento}
               aria-current={secaoAtiva === item.id ? 'true' : undefined}
               style={{ ...E.navBotao, ...(secaoAtiva === item.id ? E.navBotaoAtivo : null) }}
               whileHover={{ color: NEON_CIANO, y: -1 }}
@@ -1442,6 +1458,19 @@ const CSS_GLOBAL = `
   .ui-scroll::-webkit-scrollbar-thumb {
     background: linear-gradient(180deg, ${NEON_CIANO}, ${NEON_MAGENTA});
     border-radius: 999px;
+  }
+
+  /* Oculta visualmente mantendo acessível p/ SEO e leitores de tela */
+  .visualmente-oculto {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
   }
 
   button:focus-visible,
