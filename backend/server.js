@@ -4,8 +4,8 @@
  * ------------------------------------------------------------
  *  POST /api/contato:
  *    1. grava o lead no Postgres (tabela leads)
- *    2. disparo duplo via Nodemailer (Gmail):
- *       confirmação cyberpunk ao remetente + lead para o Dyone
+ *    2. disparo duplo via Nodemailer, pelo SMTP do próprio domínio:
+ *       confirmação cyberpunk ao remetente + lead para EMAIL_DESTINO
  *  Rate-limit persistente via Redis (fallback em memória).
  *  Credenciais: ESTRITAMENTE via variáveis de ambiente (.env)
  * ============================================================
@@ -27,8 +27,14 @@ dotenv.config({ path: path.join(__dirname, '.env') })
 dotenv.config({ path: path.join(__dirname, '..', '.env') })
 
 const {
-  GMAIL_USER,
-  GMAIL_APP_PASS,
+  // SMTP da caixa do domínio (envio autenticado, TLS implícito na 465)
+  SMTP_HOST = 'mail.nirmind.com.br',
+  SMTP_PORT = 465,
+  SMTP_USER = 'contato@dyonedev.com.br',
+  SMTP_PASS,
+  // remetente dos emails e caixa que recebe os leads do formulário
+  EMAIL_REMETENTE = SMTP_USER,
+  EMAIL_DESTINO = SMTP_USER,
   PORT = 3002,
   // defaults apontam para as portas PUBLICADAS no host (dev local);
   // dentro do Docker, o .env injeta os hostnames dos serviços
@@ -36,15 +42,25 @@ const {
   REDIS_URL = 'redis://localhost:6386',
 } = process.env
 
-if (!GMAIL_USER || !GMAIL_APP_PASS) {
-  console.error('[BOOT] GMAIL_USER e GMAIL_APP_PASS são obrigatórias — defina no .env da raiz.')
+if (!SMTP_PASS) {
+  console.error('[BOOT] SMTP_PASS é obrigatória (senha da caixa SMTP_USER) — defina no .env da raiz.')
   process.exit(1)
 }
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: GMAIL_USER, pass: GMAIL_APP_PASS },
+  host: SMTP_HOST,
+  port: Number(SMTP_PORT),
+  secure: Number(SMTP_PORT) === 465, // 465 = TLS implícito; 587 = STARTTLS
+  auth: { user: SMTP_USER, pass: SMTP_PASS },
 })
+
+// Confere host, TLS e senha já na subida — sem isso, credencial errada só
+// apareceria quando alguém enviasse o formulário. Não derruba o serviço:
+// o lead continua sendo gravado no banco mesmo com o email fora do ar.
+transporter
+  .verify()
+  .then(() => console.log(`[SMTP] autenticado em ${SMTP_HOST}:${SMTP_PORT} como ${SMTP_USER}`))
+  .catch((erro) => console.error(`[SMTP] FALHA ao autenticar em ${SMTP_HOST}:${SMTP_PORT}: ${erro.message}`))
 
 /* ------------------------------------------------------------
    Postgres — persistência de leads (modo degradado se cair)
@@ -225,15 +241,15 @@ app.post('/api/contato', limitarTaxa, async (req, res) => {
   // 2) Disparo duplo em paralelo (não deixa um email travar o outro)
   const resultados = await Promise.allSettled([
     transporter.sendMail({
-      from: `"DYONE.DEV //" <${GMAIL_USER}>`,
+      from: `"DYONE.DEV //" <${EMAIL_REMETENTE}>`,
       to: email,
       subject: '[ DYONE.DEV ] Conexão recebida — protocolo em triagem',
       text: `> olá, ${nome}\n\n> sua solicitação de conexão foi recebida e entrou em processo de triagem.\n> responderei pelo canal informado em breve.\n\n— dyone // fullstack & devops`,
       html: htmlConfirmacao(nome),
     }),
     transporter.sendMail({
-      from: `"Portfolio // Lead" <${GMAIL_USER}>`,
-      to: GMAIL_USER,
+      from: `"Portfolio // Lead" <${EMAIL_REMETENTE}>`,
+      to: EMAIL_DESTINO,
       replyTo: email, // responder o lead direto da caixa de entrada
       subject: `[ LEAD ] Novo contato de ${nome}`,
       text: `Nome: ${nome}\nEmail: ${email}\n\nMensagem:\n${mensagem}`,

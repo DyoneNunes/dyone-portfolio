@@ -5,7 +5,7 @@ Portfólio interativo fullstack com personagem 3D, scroll storytelling estilo aw
 ## Stack
 
 **Frontend** — React 19 · Vite · React Three Fiber + drei · framer-motion
-**Backend** — Node.js · Express 5 · Nodemailer (Gmail) · PostgreSQL · Redis
+**Backend** — Node.js · Express 5 · Nodemailer (SMTP do domínio) · PostgreSQL · Redis
 **Infra** — Docker Compose (6 serviços) · Nginx como entrada única
 
 ## Destaques técnicos
@@ -19,7 +19,7 @@ Portfólio interativo fullstack com personagem 3D, scroll storytelling estilo aw
 ## Rodando
 
 ```bash
-cp .env.example .env   # preencha GMAIL_USER e GMAIL_APP_PASS
+cp .env.example .env   # preencha SMTP_PASS (senha da caixa de e-mail)
 docker compose up -d --build
 ```
 
