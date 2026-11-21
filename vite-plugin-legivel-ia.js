@@ -13,7 +13,7 @@
  *   2. JSON-LD (schema.org ItemList) com os projetos
  *   3. /llms.txt — o mesmo conteúdo em Markdown (llmstxt.org)
  *
- *  Vale no dev server (que é o que roda em produção) e no build.
+ *  Vale no build de produção (dist/) e no dev server local.
  * ============================================================
  */
 import {
@@ -116,7 +116,7 @@ function gerarJsonLd() {
         url: p.url,
         genre: p.tipo,
         keywords: p.tags.join(', '),
-        creator: { '@type': 'Person', name: NOME, url: SITE_URL },
+        creator: { '@id': `${SITE_URL}/#dyone` }, // o Person declarado no index.html
       },
     })),
   }
@@ -200,7 +200,7 @@ export default function legivelPorIa() {
       }
     },
 
-    // dev server (também é o servidor de produção deste projeto)
+    // dev server local (em produção o nginx serve o llms.txt do build)
     configureServer(servidor) {
       servidor.middlewares.use('/llms.txt', (_req, res) => {
         res.setHeader('Content-Type', 'text/markdown; charset=utf-8')

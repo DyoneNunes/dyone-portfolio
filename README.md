@@ -6,7 +6,7 @@ Portfólio interativo fullstack com personagem 3D, scroll storytelling estilo aw
 
 **Frontend** — React 19 · Vite · React Three Fiber + drei · framer-motion
 **Backend** — Node.js · Express 5 · Nodemailer (SMTP do domínio) · PostgreSQL · Redis
-**Infra** — Docker Compose (6 serviços) · Nginx como entrada única
+**Infra** — Docker Compose (5 serviços) · Nginx como entrada única
 
 ## Destaques técnicos
 
@@ -25,16 +25,19 @@ docker compose up -d --build
 
 | Porta | Serviço |
 |---|---|
-| **8087** | nginx — entrada única (app + `/api`) |
-| 5179 | frontend (Vite dev) |
+| **8087** | nginx — entrada única (build de produção + `/api`) |
 | 3008 | backend (API de contato) |
 | 5440 | PostgreSQL (leads) |
 | 6386 | Redis (rate-limit) |
 | 8088 | Adminer (UI do banco) |
 
 > As portas internas dos containers são as padrão; apenas o lado do host é deslocado.
+> Todas ficam presas em `127.0.0.1`: em produção só o nginx do servidor (HTTPS) chega na 8087.
+> Para abrir o Adminer de fora: `ssh -L 8088:127.0.0.1:8088 <servidor>`.
 
 Acesse **http://localhost:8087**.
+
+O Docker serve o **build de produção** (`vite build` + nginx); para hot reload use o dev local abaixo.
 
 ### Dev local (sem Docker)
 
@@ -52,5 +55,6 @@ npm install && npm run dev
 ├── public/meu_cyberpunk.glb
 ├── backend/server.js    # API de contato (email + leads + rate-limit)
 ├── nginx/nginx.conf     # entrada única
-└── docker-compose.yml   # 6 serviços
+├── Dockerfile           # build do Vite + nginx
+└── docker-compose.yml   # 5 serviços
 ```

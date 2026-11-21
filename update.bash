@@ -5,7 +5,7 @@
 # Executa em 5 etapas:
 #   1. Backup do PostgreSQL (leads do formulário de contato)
 #   2. git pull, preservando alterações locais do servidor (stash → pull → pop)
-#   3. Rebuild dos containers; renova o node_modules quando as dependências mudam
+#   3. Rebuild dos containers (build de produção do site dentro da imagem)
 #   4. Healthcheck: site, API, /llms.txt e domínio público
 #   5. Relatório final
 #
@@ -47,11 +47,11 @@ main() {
 
   # ── 1. BACKUP DO BANCO ─────────────────────────────────────────────────────
   log "1/5 — Backup do PostgreSQL"
-  # FORA da pasta do projeto, de propósito: o Vite dev server publica os
-  # arquivos da raiz do repositório, e o dump contém dados dos leads.
+  # FORA da pasta do projeto, de propósito: o dump contém dados dos leads
+  # e não deve ir parar no contexto de build nem no repositório.
   local BACKUP_DIR="${BACKUP_DIR:-$HOME/backups/dyone-portfolio}"
   local BACKUP_FILE=""
-  case "$BACKUP_DIR/" in "$ROOT"/*) die "BACKUP_DIR não pode ficar dentro do projeto ($ROOT): seria servido pelo site." ;; esac
+  case "$BACKUP_DIR/" in "$ROOT"/*) die "BACKUP_DIR não pode ficar dentro do projeto ($ROOT): entraria no build da imagem." ;; esac
   mkdir -p "$BACKUP_DIR" && chmod 700 "$BACKUP_DIR"
 
   if docker ps --format '{{.Names}}' | grep -q "^${PG_CONTAINER}$"; then
@@ -111,16 +111,17 @@ main() {
 
   # ── 3. REBUILD DOS CONTAINERS ──────────────────────────────────────────────
   log "3/5 — Rebuild e subida dos containers"
-  # O node_modules de cada app vive num volume anônimo, que o compose
-  # reaproveita entre recriações. Se as dependências mudaram, ele precisa ser
-  # renovado — senão o container sobe com os pacotes antigos e o site quebra.
+  # O site é um build estático dentro da imagem do nginx: o --build já o
+  # refaz. Só o backend tem node_modules em volume anônimo, que o compose
+  # reaproveita entre recriações — se as dependências mudaram, ele precisa
+  # ser renovado, senão o container sobe com os pacotes antigos.
   local RENOVAR=()
   if [ "$ANTES" != "$DEPOIS" ]; then
-    git diff --quiet "$ANTES" "$DEPOIS" -- package.json package-lock.json || RENOVAR+=(frontend)
     git diff --quiet "$ANTES" "$DEPOIS" -- backend/package.json backend/package-lock.json || RENOVAR+=(backend)
   fi
 
-  docker compose up -d --build
+  # --remove-orphans: derruba containers de serviços que saíram do compose
+  docker compose up -d --build --remove-orphans
   if [ "${#RENOVAR[@]}" -gt 0 ]; then
     log "  Dependências mudaram em: ${RENOVAR[*]} — renovando node_modules"
     docker compose up -d --no-deps --force-recreate --renew-anon-volumes "${RENOVAR[@]}"
@@ -150,7 +151,7 @@ main() {
 
   local BASE="http://127.0.0.1:${PORTA_LOCAL}"
   check_endpoint "Site (nginx)" "$BASE/" 'id="root"'
-  check_endpoint "App React" "$BASE/src/App.jsx"
+  check_endpoint "Build de produção" "$BASE/" '/assets/index-'
   check_endpoint "API de contato" "$BASE/api/saude"
   check_endpoint "llms.txt (IA)" "$BASE/llms.txt" "## Projetos"
   if [ -n "$SITE_PUBLICO" ]; then
@@ -172,7 +173,7 @@ main() {
   echo "  • Local:     $BASE"
   [ -n "$SITE_PUBLICO" ] && echo "  • Público:   $SITE_PUBLICO"
   if [ "$FALHAS" -gt 0 ]; then
-    echo "  • Logs:      docker compose logs --tail=50 frontend backend"
+    echo "  • Logs:      docker compose logs --tail=50 nginx backend"
   fi
   printf '%b══════════════════════════════════════════════════════════════════%b\n\n' "$COR" "$C_RESET"
 

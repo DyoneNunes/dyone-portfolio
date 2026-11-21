@@ -7,12 +7,13 @@
     <!-- SEO -->
     <meta
       name="description"
-      content="Portfólio de Dyone Nunes Andrade, Desenvolvedor Fullstack e DevOps. Especialista em Python, React, Docker e PostgreSQL — SaaS, infraestrutura e experiências 3D. Conheça meus projetos."
+      content="Dyone Nunes Andrade, desenvolvedor Fullstack e DevOps em Vitória, ES. Python, React, Docker e PostgreSQL em SaaS, infraestrutura e 3D. Veja os projetos."
     />
     <meta
       name="keywords"
       content="Dyone, Dyone Andrade, Dyone Nunes Andrade, Desenvolvedor, Fullstack, DevOps, Python, React, Docker, PostgreSQL, Vitoria, ES, Quilombus Network"
     />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1" />
     <link rel="canonical" href="https://dyonedev.com.br/" />
 
     <!-- Open Graph / Twitter (preview ao compartilhar o link) -->
@@ -21,37 +22,74 @@
     <meta property="og:title" content="Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps" />
     <meta
       property="og:description"
-      content="Python, React, Docker e PostgreSQL — SaaS, infraestrutura e experiências 3D interativas."
+      content="Desenvolvedor Fullstack e DevOps em Vitória, ES. Python, React, Docker e PostgreSQL em SaaS, infraestrutura e experiências 3D interativas."
     />
+    <meta property="og:site_name" content="Dyone Dev" />
     <meta property="og:image" content="https://dyonedev.com.br/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Logo neon DD de Dyone Dev" />
     <meta property="og:locale" content="pt_BR" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps" />
     <meta
       name="twitter:description"
-      content="Python, React, Docker e PostgreSQL — SaaS, infraestrutura e experiências 3D interativas."
+      content="Desenvolvedor Fullstack e DevOps em Vitória, ES. Python, React, Docker e PostgreSQL em SaaS, infraestrutura e experiências 3D interativas."
     />
     <meta name="twitter:image" content="https://dyonedev.com.br/og-image.png" />
+    <meta name="twitter:image:alt" content="Logo neon DD de Dyone Dev" />
     <!-- Favicon (gerado a partir de public/logo.jpeg) -->
     <link rel="icon" href="/favicon.ico" sizes="48x48" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <title>Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps</title>
-    <!-- Dados estruturados: Person (reforça a indexação do nome no Google) -->
+    <!-- Dados estruturados: WebSite + ProfilePage + Person, ligados por @id.
+         ProfilePage é o tipo que o Google usa para páginas de perfil de uma pessoa. -->
     <script type="application/ld+json">
       {
         "@context": "https://schema.org",
-        "@type": "Person",
-        "name": "Dyone Nunes Andrade",
-        "alternateName": "Dyone Dev",
-        "jobTitle": "Desenvolvedor Fullstack e DevOps",
-        "url": "https://dyonedev.com.br",
-        "email": "contato@dyonedev.com.br",
-        "worksFor": { "@type": "Organization", "name": "Quilombus Network" },
-        "knowsAbout": ["Python", "React", "Docker", "PostgreSQL", "DevOps", "Three.js"],
-        "sameAs": [
-          "https://github.com/DyoneNunes",
-          "https://www.linkedin.com/in/dyone-andrade-0340462b6/"
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://dyonedev.com.br/#site",
+            "url": "https://dyonedev.com.br/",
+            "name": "Dyone Dev",
+            "inLanguage": "pt-BR",
+            "publisher": { "@id": "https://dyonedev.com.br/#dyone" }
+          },
+          {
+            "@type": "ProfilePage",
+            "@id": "https://dyonedev.com.br/#perfil",
+            "url": "https://dyonedev.com.br/",
+            "name": "Dyone Nunes Andrade | Desenvolvedor Fullstack e DevOps",
+            "inLanguage": "pt-BR",
+            "isPartOf": { "@id": "https://dyonedev.com.br/#site" },
+            "mainEntity": { "@id": "https://dyonedev.com.br/#dyone" }
+          },
+          {
+            "@type": "Person",
+            "@id": "https://dyonedev.com.br/#dyone",
+            "name": "Dyone Nunes Andrade",
+            "alternateName": "Dyone Dev",
+            "jobTitle": "Desenvolvedor Fullstack e DevOps",
+            "description": "Co-founder e CTO da Quilombus Network. Desenvolvedor Fullstack e DevOps com foco em React, FastAPI, Docker e Neo4j.",
+            "url": "https://dyonedev.com.br/",
+            "email": "contato@dyonedev.com.br",
+            "image": "https://dyonedev.com.br/og-image.png",
+            "address": {
+              "@type": "PostalAddress",
+              "addressLocality": "Vitória",
+              "addressRegion": "ES",
+              "addressCountry": "BR"
+            },
+            "worksFor": { "@type": "Organization", "name": "Quilombus Network" },
+            "knowsAbout": ["Python", "React", "Docker", "PostgreSQL", "DevOps", "Three.js"],
+            "sameAs": [
+              "https://github.com/DyoneNunes",
+              "https://www.linkedin.com/in/dyone-andrade-0340462b6/"
+            ]
+          }
         ]
       }
     </script>
