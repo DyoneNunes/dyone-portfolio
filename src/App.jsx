@@ -27,7 +27,7 @@ import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
 import { motion, MotionConfig, useMotionValueEvent, useScroll, useTransform } from 'framer-motion'
 import { Color, MathUtils } from 'three'
-import { HERO_CHIPS, HERO_RESUMO, meusProjetos, minhasRedes, techStacks, TEXTO_SOBRE } from './conteudo.js'
+import { EMAIL_CONTATO, HERO_CHIPS, HERO_RESUMO, meusProjetos, minhasRedes, techStacks, TEXTO_SOBRE } from './conteudo.js'
 
 /* ============================================================
    CONSTANTES E DADOS
@@ -870,6 +870,14 @@ function SecaoContato() {
         <div style={E.contatoCanais}>
           <span style={E.canaisLabel}>{'// canais_diretos'}</span>
           <div style={E.contatoLinks}>
+            <motion.a
+              href={`mailto:${EMAIL_CONTATO}`}
+              data-umami-event="Contato-Email-Click"
+              style={E.contatoLink}
+              whileHover={{ color: NEON_CIANO, textShadow: `0 0 12px ${NEON_CIANO}`, y: -1 }}
+            >
+              {`[ ${EMAIL_CONTATO} ]`}
+            </motion.a>
             {minhasRedes.map((rede) => (
               <motion.a
                 key={rede.url}

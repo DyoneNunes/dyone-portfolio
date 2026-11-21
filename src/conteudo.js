@@ -13,6 +13,7 @@ export const SITE_URL = 'https://dyonedev.com.br'
 export const NOME = 'Dyone Nunes Andrade'
 export const CARGO = 'Desenvolvedor Fullstack e DevOps'
 export const LOCAL = 'Vitória, ES, Brasil'
+export const EMAIL_CONTATO = 'contato@dyonedev.com.br'
 
 export const HERO_RESUMO =
   'Co-founder e CTO da Quilombus Network. Construo ecossistemas escaláveis com React, FastAPI, Docker e Neo4j.'

@@ -18,6 +18,7 @@
  */
 import {
   CARGO,
+  EMAIL_CONTATO,
   HERO_CHIPS,
   HERO_RESUMO,
   LOCAL,
@@ -91,7 +92,8 @@ function gerarHtmlEstatico() {
         </section>
         <section>
           <h2>Contato</h2>
-          <ul>${redes}
+          <ul>
+          <li>E-mail: <a href="mailto:${esc(EMAIL_CONTATO)}">${esc(EMAIL_CONTATO)}</a></li>${redes}
           </ul>
           <p>Formulário de contato disponível na seção final de <a href="${SITE_URL}/">${SITE_URL}</a>.</p>
         </section>
@@ -148,6 +150,7 @@ function gerarLlmsTxt() {
     '',
     '## Contato',
     '',
+    `- E-mail: [${EMAIL_CONTATO}](mailto:${EMAIL_CONTATO})`,
     ...minhasRedes.map((r) => `- [${nomeRede(r)}](${r.url})`),
     `- [Formulário de contato](${SITE_URL}/): na seção final do site`,
     '',
