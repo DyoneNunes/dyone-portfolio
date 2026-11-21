@@ -1,12 +1,35 @@
 /* ============================================
    Reset global + base do tema Cyberpunk
    ============================================ */
+:root {
+  /* cores */
+  --fundo: #050505;
+  --texto: #e6ebf5;
+  --ciano: #00ffff;
+  --magenta: #ff00ff;
+
+  /* tipografia: Orbitron (títulos) · JetBrains Mono (terminal/rótulos)
+     · Space Grotesk (texto corrido) */
+  --fonte-titulo: 'Orbitron', sans-serif;
+  --fonte-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
+  --fonte-texto: 'Space Grotesk', system-ui, sans-serif;
+  --fs-xs: 0.75rem; /* 12px — menor tamanho permitido */
+
+  /* margem lateral das seções */
+  --gutter: clamp(20px, 4.5vw, 64px);
+}
+
 *,
 *::before,
 *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent; /* sem flash cinza ao tocar */
+  -webkit-text-size-adjust: 100%; /* sem inflar fonte em paisagem */
 }
 
 html,
@@ -17,12 +40,23 @@ body,
 }
 
 body {
-  background: #050505;
-  color: #e6ebf5;
-  font-family: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Menlo, monospace;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--fonte-mono);
   overflow: hidden; /* a cena 3D ocupa a viewport inteira */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Controles: toque sem atraso e sem selecionar o rótulo no long-press */
+button,
+a {
+  touch-action: manipulation;
+}
+
+button {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 ::selection {

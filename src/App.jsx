@@ -2,18 +2,31 @@
  * ============================================================
  *  PORTFÓLIO INTERATIVO 3D — Cyberpunk / Scroll Storytelling
  * ------------------------------------------------------------
- *  Camada 3D : FIXA ao fundo — personagem à direita + parallax
- *  Camada UI : container com scroll nativo, 3 telas de 100vh
- *              alinhadas à esquerda, revelação via whileInView
- *  Nav       : âncoras de terminal (// about, // work) com
- *              destaque automático da seção visível
+ *  Camada 3D : FIXA ao fundo — personagem + cenário (grade,
+ *              anéis, partículas, bloom) coreografados pelo scroll
+ *  Camada UI : container com scroll nativo, seções de 100svh
+ *              em coluna à esquerda (largura total no mobile)
+ *  Nav       : âncoras de terminal no topo (desktop) ou barra
+ *              inferior (mobile), com destaque da seção visível
  * ============================================================
  */
 import { Component, Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { Center, Html, Resize, useAnimations, useGLTF, useProgress } from '@react-three/drei'
-import { motion, MotionConfig, useMotionValueEvent, useScroll } from 'framer-motion'
-import { MathUtils } from 'three'
+import {
+  Center,
+  Grid,
+  Html,
+  PerformanceMonitor,
+  Resize,
+  Sparkles,
+  useAnimations,
+  useGLTF,
+  useProgress,
+} from '@react-three/drei'
+import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing'
+import { ToneMappingMode } from 'postprocessing'
+import { motion, MotionConfig, useMotionValueEvent, useScroll, useTransform } from 'framer-motion'
+import { Color, MathUtils } from 'three'
 
 /* ============================================================
    CONSTANTES E DADOS
@@ -77,6 +90,16 @@ const meusProjetos = [
     evento: 'Projeto-Amarelo-Click',
     tags: ['Java', 'Estrutura de Dados'],
   },
+  {
+    id: 7,
+    nome: 'Skills Router',
+    descricao:
+      'Servidor MCP + meta-skill que indexa, busca e carrega skills de agentes de IA sob demanda, sem estourar a janela de contexto.',
+    tipo: 'Open Source / IA',
+    url: 'https://github.com/DyoneNunes/mcp-manage-router-skill',
+    evento: 'Projeto-SkillsRouter-Click',
+    tags: ['Python', 'MCP', 'FastMCP', 'uv'],
+  },
 ]
 
 const TEXTO_SOBRE =
@@ -103,65 +126,192 @@ const minhasRedes = [
 ]
 
 /* ============================================================
+   UTILITÁRIOS DE MÍDIA
+   ============================================================ */
+const LARGURA_COMPACTA = 760 // px — abaixo disso o layout é "mobile"
+
+const consultaMidia = (consulta) => window.matchMedia(consulta).matches
+
+/** Media query reativa (ex.: '(hover: none)' para telas de toque). */
+function useMidia(consulta) {
+  const [bate, setBate] = useState(() => consultaMidia(consulta))
+  useEffect(() => {
+    const mq = window.matchMedia(consulta)
+    const aoMudar = (evento) => setBate(evento.matches)
+    mq.addEventListener('change', aoMudar)
+    return () => mq.removeEventListener('change', aoMudar)
+  }, [consulta])
+  return bate
+}
+
+/* ============================================================
    CAMADA 3D — fixa ao fundo, imune ao scroll
    ============================================================ */
 
-/** Mouse global normalizado (-1..1) — escuta a window para o
- *  parallax continuar vivo com o cursor sobre o texto/scroll. */
+/** Ponteiro global normalizado (-1..1) — escuta a window para o
+ *  parallax continuar vivo com o cursor/dedo sobre o texto. */
 function usePonteiroGlobal() {
   const ponteiro = useRef({ x: 0, y: 0 })
   useEffect(() => {
-    const aoMover = (evento) => {
-      ponteiro.current.x = (evento.clientX / window.innerWidth) * 2 - 1
-      ponteiro.current.y = -((evento.clientY / window.innerHeight) * 2 - 1)
+    const atualizar = (clientX, clientY) => {
+      ponteiro.current.x = (clientX / window.innerWidth) * 2 - 1
+      ponteiro.current.y = -((clientY / window.innerHeight) * 2 - 1)
+    }
+    const aoMover = (evento) => atualizar(evento.clientX, evento.clientY)
+    // No toque o pointermove é cancelado quando o scroll começa;
+    // o touchmove (passivo) mantém o parallax vivo durante o arrasto.
+    const aoTocar = (evento) => {
+      const toque = evento.touches[0]
+      if (toque) atualizar(toque.clientX, toque.clientY)
     }
     window.addEventListener('pointermove', aoMover)
-    return () => window.removeEventListener('pointermove', aoMover)
+    window.addEventListener('touchmove', aoTocar, { passive: true })
+    return () => {
+      window.removeEventListener('pointermove', aoMover)
+      window.removeEventListener('touchmove', aoTocar)
+    }
   }, [])
   return ponteiro
 }
 
-/** Rig: desloca o personagem para a direita e aplica o parallax do
- *  mouse + a rotação sutil acoplada ao progresso do scroll.
- *  As luzes viajam junto para o retrato two-tone nunca descolar. */
-function RigParallax({ progressoScroll, children }) {
-  const ref = useRef()
-  const ponteiro = usePonteiroGlobal()
-  const { viewport } = useThree()
-  const reduzMovimento = useMemo(
-    () => window.matchMedia('(prefers-reduced-motion: reduce)').matches,
-    [],
-  )
+/* Coreografia: um enquadramento por seção (hero, about, tech, work,
+   contact). x é multiplicador do deslocamento lateral; y/z movem o
+   cenário (equivale a mover a câmera); giro é o yaw do personagem.
+   Ajuste a gosto — a transição entre poses é interpolada pelo scroll. */
+const POSES_AMPLO = [
+  { x: 1.0, y: -0.25, z: 0.0, giro: 0.0 }, // hero: corpo inteiro
+  { x: 1.05, y: -0.8, z: 1.3, giro: -0.38 }, // about: close no busto
+  { x: 1.15, y: -0.25, z: 0.2, giro: -0.55 }, // tech: olha para os cards
+  { x: 1.2, y: -0.05, z: -1.2, giro: -0.22 }, // work: recua, mostra o chão
+  { x: 1.0, y: -0.6, z: 0.8, giro: -0.42 }, // contact: aproxima de novo
+]
+const POSES_COMPACTO = [
+  { x: 0, y: 0.5, z: 0.0, giro: 0.0 }, // hero: personagem no topo
+  { x: 0, y: 0.15, z: -1.2, giro: -0.3 }, // demais: recua atrás do texto
+  { x: 0, y: 0.15, z: -1.6, giro: 0.3 },
+  { x: 0, y: 0.15, z: -2.0, giro: -0.2 },
+  { x: 0, y: 0.25, z: -1.0, giro: 0.0 },
+]
 
-  const offsetX = Math.min(viewport.width * 0.16, 1.5)
+/** Interpola a pose para uma posição fracionária de seção (0..n-1),
+ *  escrevendo em `saida` para não alocar a cada frame. */
+function interpolarPose(poses, secao, saida) {
+  const ultimo = poses.length - 1
+  const s = MathUtils.clamp(secao, 0, ultimo)
+  const i = Math.min(Math.floor(s), ultimo - 1)
+  const t = MathUtils.smootherstep(s - i, 0, 1)
+  const a = poses[i]
+  const b = poses[i + 1]
+  saida.x = MathUtils.lerp(a.x, b.x, t)
+  saida.y = MathUtils.lerp(a.y, b.y, t)
+  saida.z = MathUtils.lerp(a.z, b.z, t)
+  saida.giro = MathUtils.lerp(a.giro, b.giro, t)
+  return saida
+}
+
+/** Anéis holográficos atrás do personagem — halo HUD que o bloom acende. */
+function AneisHolo({ parado, compacto }) {
+  const externo = useRef()
+  const interno = useRef()
+  // cores em HDR (>1) para ultrapassar o limiar do bloom
+  const ciano = useMemo(() => new Color(NEON_CIANO).multiplyScalar(4), [])
+  const magenta = useMemo(() => new Color(NEON_MAGENTA).multiplyScalar(4), [])
 
   useFrame((_, delta) => {
-    if (!ref.current || reduzMovimento) return
-    const progresso = progressoScroll?.current ?? 0 // 0 (hero) → 1 (fim)
-    // Mouse (parallax) + scroll (storytelling): conforme a página desce,
-    // o personagem gira sutilmente em direção à coluna de texto — como
-    // se acompanhasse a leitura. Ajuste -0.5 (yaw) e 0.1 (pitch) a gosto.
-    const alvoY = ponteiro.current.x * 0.45 + progresso * -0.5
-    const alvoX = -ponteiro.current.y * 0.16 + progresso * 0.1
-    ref.current.rotation.y = MathUtils.damp(ref.current.rotation.y, alvoY, 2.6, delta)
-    ref.current.rotation.x = MathUtils.damp(ref.current.rotation.x, alvoX, 2.6, delta)
+    if (parado || !externo.current || !interno.current) return
+    externo.current.rotation.z -= delta * 0.08
+    interno.current.rotation.z += delta * 0.12
   })
 
   return (
-    <group position={[offsetX, -0.25, 0]}>
-      {/* Dueto frontal-lateral: esculpe rosto e jaqueta (CP2077 style).
-          Ajuste intensity 100–400; z negativo = modo silhueta. */}
-      <pointLight color={NEON_MAGENTA} position={[-3.2, 2.4, 2.6]} intensity={220} />
-      <pointLight color={NEON_CIANO} position={[3.2, 1.5, 2.4]} intensity={220} />
-      <group ref={ref}>{children}</group>
+    // no mobile o halo encolhe e sobe para emoldurar o rosto sem estourar a tela
+    <group position={[0, compacto ? 0.7 : 0.35, -1.4]} scale={compacto ? 0.6 : 1}>
+      <mesh ref={interno}>
+        <torusGeometry args={[1.75, 0.008, 8, 160, Math.PI * 1.6]} />
+        <meshBasicMaterial color={ciano} toneMapped={false} transparent opacity={0.75} />
+      </mesh>
+      <mesh ref={externo}>
+        <torusGeometry args={[2.1, 0.005, 8, 160, Math.PI * 1.15]} />
+        <meshBasicMaterial color={magenta} toneMapped={false} transparent opacity={0.6} />
+      </mesh>
+      <mesh>
+        <torusGeometry args={[1.45, 0.003, 8, 160]} />
+        <meshBasicMaterial color={NEON_CIANO} transparent opacity={0.22} />
+      </mesh>
     </group>
   )
 }
 
-/** GLB normalizado (Center+Resize), de frente, com idle se existir. */
-function ModeloCyberpunk() {
+/** Rig: move o cenário inteiro conforme a seção (coreografia do scroll)
+ *  e gira só o personagem com o parallax do ponteiro. Luzes, chão e
+ *  anéis viajam junto para o retrato two-tone nunca descolar. */
+function RigCenario({ estadoScroll, compacto, parado, children }) {
+  const mundo = useRef()
+  const giro = useRef()
+  const pose = useRef({ x: 0, y: 0, z: 0, giro: 0 })
+  const ponteiro = usePonteiroGlobal()
+  const { viewport } = useThree()
+
+  const poses = compacto ? POSES_COMPACTO : POSES_AMPLO
+  const deslocX = compacto ? 0 : Math.min(viewport.width * 0.16, 1.5)
+
+  useFrame((estado, delta) => {
+    if (!mundo.current || !giro.current || parado) return
+    const secao = estadoScroll?.current?.secao ?? 0
+    const alvo = interpolarPose(poses, secao, pose.current)
+    const posicao = mundo.current.position
+    posicao.x = MathUtils.damp(posicao.x, alvo.x * deslocX, 3, delta)
+    posicao.y = MathUtils.damp(posicao.y, alvo.y, 3, delta)
+    posicao.z = MathUtils.damp(posicao.z, alvo.z, 3, delta)
+
+    // yaw = pose da seção + parallax + respiração lenta (vida no toque)
+    const respiro = Math.sin(estado.clock.elapsedTime * 0.45) * 0.05
+    const alvoY = alvo.giro + ponteiro.current.x * 0.4 + respiro
+    const alvoX = -ponteiro.current.y * 0.14
+    giro.current.rotation.y = MathUtils.damp(giro.current.rotation.y, alvoY, 2.6, delta)
+    giro.current.rotation.x = MathUtils.damp(giro.current.rotation.x, alvoX, 2.6, delta)
+  })
+
+  return (
+    <group
+      ref={mundo}
+      position={[poses[0].x * deslocX, poses[0].y, poses[0].z]}
+      scale={compacto ? 0.8 : 1}
+    >
+      {/* Dueto frontal-lateral: esculpe rosto e jaqueta (CP2077 style).
+          Ajuste intensity 100–400; z negativo = modo silhueta. */}
+      <pointLight color={NEON_MAGENTA} position={[-3.2, 2.4, 2.6]} intensity={220} />
+      <pointLight color={NEON_CIANO} position={[3.2, 1.5, 2.4]} intensity={220} />
+      {/* Luz de recorte: vem de trás/cima e destaca a silhueta do fundo */}
+      <pointLight color="#9fe8ff" position={[0.4, 2.6, -2.6]} intensity={150} />
+
+      <AneisHolo parado={parado} compacto={compacto} />
+
+      {/* Chão: grade neon que some na distância (base do busto ≈ y -1.6) */}
+      <Grid
+        position={[0, -1.6, 0]}
+        infiniteGrid
+        cellSize={0.5}
+        cellThickness={0.6}
+        cellColor="#0a2e33"
+        sectionSize={2.5}
+        sectionThickness={1.1}
+        sectionColor="#0c8a94"
+        fadeDistance={compacto ? 16 : 24}
+        fadeStrength={1.6}
+      />
+
+      <group ref={giro}>{children}</group>
+    </group>
+  )
+}
+
+/** GLB normalizado (Center+Resize), de frente, com idle se existir.
+ *  Entra em cena girando e subindo até a pose final. */
+function ModeloCyberpunk({ parado }) {
   const { scene, animations } = useGLTF(MODELO_URL)
   const { actions } = useAnimations(animations, scene)
+  const entrada = useRef()
 
   useEffect(() => {
     const nomes = Object.keys(actions)
@@ -171,8 +321,20 @@ function ModeloCyberpunk() {
     return () => acao?.fadeOut(0.3)
   }, [actions])
 
+  useFrame((_, delta) => {
+    const grupo = entrada.current
+    if (!grupo) return
+    grupo.rotation.y = MathUtils.damp(grupo.rotation.y, 0, 2.2, delta)
+    grupo.position.y = MathUtils.damp(grupo.position.y, 0, 2.6, delta)
+  })
+
   return (
-    <group scale={3.2}>
+    <group
+      ref={entrada}
+      scale={3.2}
+      rotation={[0, parado ? 0 : -1.1, 0]}
+      position={[0, parado ? 0 : -0.35, 0]}
+    >
       <Resize>
         <Center>
           {/* Modelo v2 exportado de perfil (olhando p/ a esquerda da tela).
@@ -242,26 +404,81 @@ class LimiteDeErro3D extends Component {
   }
 }
 
-function Cena3D({ progressoScroll }) {
+/** Conteúdo da cena — separado do <Canvas> para poder ler o tamanho
+ *  do canvas e adaptar o enquadramento/efeitos ao mobile. */
+function Palco({ estadoScroll }) {
+  const compacto = useThree((estado) => estado.size.width < LARGURA_COMPACTA)
+  const parado = useMemo(() => consultaMidia('(prefers-reduced-motion: reduce)'), [])
+  const poeiraCiano = useMemo(() => new Color(NEON_CIANO).multiplyScalar(2.5), [])
+  const poeiraMagenta = useMemo(() => new Color(NEON_MAGENTA).multiplyScalar(2.5), [])
+
   return (
-    <Canvas
-      style={{ width: '100vw', height: '100vh' }}
-      camera={{ position: [0, 0.35, 5.5], fov: 42 }}
-      dpr={[1, 2]}
-      gl={{ antialias: true, powerPreference: 'high-performance' }}
-    >
+    <>
       <color attach="background" args={['#050505']} />
       <fog attach="fog" args={['#050505', 7, 18]} />
 
-      <ambientLight intensity={0.05} />
+      <ambientLight intensity={0.06} />
 
-      <RigParallax progressoScroll={progressoScroll}>
+      <RigCenario estadoScroll={estadoScroll} compacto={compacto} parado={parado}>
         <LimiteDeErro3D fallback={<PlaceholderNeon />}>
           <Suspense fallback={<TelaDeCarregamento />}>
-            <ModeloCyberpunk />
+            <ModeloCyberpunk parado={parado} />
           </Suspense>
         </LimiteDeErro3D>
-      </RigParallax>
+      </RigCenario>
+
+      {/* Poeira neon em suspensão: dá profundidade ao vazio do fundo */}
+      <Sparkles
+        count={compacto ? 36 : 80}
+        scale={[11, 6, 7]}
+        position={[0, 0.4, -1]}
+        size={2.4}
+        speed={parado ? 0 : 0.28}
+        opacity={0.55}
+        color={poeiraCiano}
+      />
+      <Sparkles
+        count={compacto ? 18 : 40}
+        scale={[11, 6, 7]}
+        position={[0, 0.2, -1.5]}
+        size={3}
+        speed={parado ? 0 : 0.2}
+        opacity={0.4}
+        color={poeiraMagenta}
+      />
+
+      {/* Bloom só no que é realmente brilhante (anéis, poeira, reflexos
+          fortes do modelo). Suba luminanceThreshold se estourar demais.
+          O ToneMapping ACES preserva o look original do renderer. */}
+      <EffectComposer multisampling={compacto ? 0 : 4}>
+        <Bloom
+          mipmapBlur
+          intensity={0.6}
+          radius={0.7}
+          luminanceThreshold={1.6}
+          luminanceSmoothing={0.4}
+        />
+        <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      </EffectComposer>
+    </>
+  )
+}
+
+function Cena3D({ estadoScroll }) {
+  // DPR limitado (mais baixo no toque) e rebaixado se o FPS cair.
+  const [dpr, setDpr] = useState(() =>
+    Math.min(window.devicePixelRatio || 1, consultaMidia('(pointer: coarse)') ? 1.75 : 2),
+  )
+
+  return (
+    <Canvas
+      style={{ width: '100%', height: '100%' }}
+      camera={{ position: [0, 0.35, 5.5], fov: 42 }}
+      dpr={dpr}
+      gl={{ antialias: false, powerPreference: 'high-performance' }}
+    >
+      <PerformanceMonitor onDecline={() => setDpr(1)} />
+      <Palco estadoScroll={estadoScroll} />
     </Canvas>
   )
 }
@@ -270,15 +487,15 @@ function Cena3D({ progressoScroll }) {
    CAMADA UI — scroll storytelling
    ============================================================ */
 
-/** Revelação padrão ao entrar na viewport: fade + slide up.
- *  once: false => re-anima ao rolar de volta (vibe storytelling). */
+/** Revelação padrão ao entrar na viewport: fade + slide up curto,
+ *  uma única vez (não re-anima a cada passagem). */
 function RevelarAoScroll({ children, atraso = 0, ...resto }) {
   return (
     <motion.div
-      initial={{ opacity: 0, y: 50 }}
+      initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: false, amount: 0.3 }}
-      transition={{ duration: 0.6, ease: 'easeOut', delay: atraso }}
+      viewport={{ once: true, amount: 0.3 }}
+      transition={{ duration: 0.5, ease: 'easeOut', delay: atraso }}
       {...resto}
     >
       {children}
@@ -286,32 +503,92 @@ function RevelarAoScroll({ children, atraso = 0, ...resto }) {
   )
 }
 
-/* ---------- Seção 1: Hero ---------- */
-function SecaoHero() {
+/** Cabeçalho de seção: rótulo de terminal + título. */
+function CabecalhoSecao({ rotulo, titulo, magenta = false }) {
   return (
-    <section id="topo" style={{ ...E.secao, ...E.secaoHero }} className="secao">
-      <RevelarAoScroll>
-        <span style={E.overline}>{'/// PORTFOLIO_2026'}</span>
-      </RevelarAoScroll>
+    <RevelarAoScroll>
+      <span className={`secao-rotulo${magenta ? ' secao-rotulo--magenta' : ''}`}>{rotulo}</span>
+      <h2 className="secao-titulo">{titulo}</h2>
+    </RevelarAoScroll>
+  )
+}
 
-      <RevelarAoScroll atraso={0.08}>
-        <h1 style={E.heroTitulo}>
-          HELLO,
-          <br />
-          {"I'M DYONE"}
-          <span style={E.cursorPiscante}>_</span>
+/* ---------- Seção 1: Hero ---------- */
+const HERO_RESUMO =
+  'Co-founder e CTO da Quilombus Network. Construo ecossistemas escaláveis com React, FastAPI, Docker e Neo4j.'
+const HERO_CHIPS = ['CTO @ Quilombus Network', '9+ anos de código', 'Vitória, ES']
+
+const HERO_PAI = {
+  oculto: {},
+  visivel: { transition: { staggerChildren: 0.09, delayChildren: 0.15 } },
+}
+const HERO_FILHO = {
+  oculto: { opacity: 0, y: 20 },
+  visivel: { opacity: 1, y: 0, transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] } },
+}
+
+function SecaoHero({ irPara }) {
+  return (
+    <section id="topo" className="secao secao-hero">
+      <motion.div className="hero-conteudo" variants={HERO_PAI} initial="oculto" animate="visivel">
+        <motion.span variants={HERO_FILHO} style={E.overline}>
+          {'/// PORTFOLIO_2026'}
+        </motion.span>
+
+        <motion.h1 variants={HERO_FILHO} className="hero-titulo">
+          <span className="hero-ola">{"Hello, I'm"}</span>{' '}
+          <span className="hero-nome-linha">
+            <span className="hero-nome">Dyone</span>
+            <span style={E.cursorPiscante} aria-hidden="true">
+              _
+            </span>
+          </span>
           {/* nome completo p/ SEO e leitores de tela — invisível no visual */}
           <span className="visualmente-oculto">
             {' — Dyone Nunes Andrade, Desenvolvedor Fullstack e DevOps'}
           </span>
-        </h1>
-      </RevelarAoScroll>
+        </motion.h1>
 
-      <RevelarAoScroll atraso={0.16}>
-        <h2 style={E.heroSubtitulo}>{'Fullstack Developer & DevOps'}</h2>
-      </RevelarAoScroll>
+        <motion.h2 variants={HERO_FILHO} style={E.heroSubtitulo}>
+          {'Fullstack Developer & DevOps'}
+        </motion.h2>
 
-      <span style={E.indicadorScroll}>{'[ scroll down para iniciar conexão ]'}</span>
+        <motion.p variants={HERO_FILHO} style={E.heroResumo}>
+          {HERO_RESUMO}
+        </motion.p>
+
+        <motion.div variants={HERO_FILHO} className="hero-acoes">
+          <button
+            type="button"
+            className="botao botao-primario"
+            onClick={() => irPara('projetos')}
+            data-umami-event="Hero-Projetos-Click"
+          >
+            {'ver_projetos →'}
+          </button>
+          <button
+            type="button"
+            className="botao botao-fantasma"
+            onClick={() => irPara('contato')}
+            data-umami-event="Hero-Contato-Click"
+          >
+            {'contato'}
+          </button>
+        </motion.div>
+
+        <motion.ul variants={HERO_FILHO} className="hero-chips">
+          {HERO_CHIPS.map((chip) => (
+            <li key={chip} className="hero-chip">
+              {chip}
+            </li>
+          ))}
+        </motion.ul>
+      </motion.div>
+
+      <span className="indicador-scroll" aria-hidden="true">
+        scroll
+        <span className="indicador-linha" />
+      </span>
     </section>
   )
 }
@@ -319,10 +596,8 @@ function SecaoHero() {
 /* ---------- Seção 2: About System ---------- */
 function SecaoSobre() {
   return (
-    <section id="sobre" style={E.secao} className="secao">
-      <RevelarAoScroll>
-        <span style={E.secaoLabel}>{'// sys.info.about'}</span>
-      </RevelarAoScroll>
+    <section id="sobre" className="secao">
+      <CabecalhoSecao rotulo="// sys.info.about" titulo="About" />
 
       <RevelarAoScroll atraso={0.1}>
         <div style={E.consoleBloco}>
@@ -337,12 +612,8 @@ function SecaoSobre() {
 /* ---------- Seção 3: Tech Stack ---------- */
 function SecaoStack() {
   return (
-    <section id="stack" style={E.secao} className="secao">
-      <RevelarAoScroll>
-        <span style={{ ...E.secaoLabel, color: NEON_MAGENTA, textShadow: '0 0 10px rgba(255, 0, 255, 0.55)' }}>
-          {'// sys.tech.stack'}
-        </span>
-      </RevelarAoScroll>
+    <section id="stack" className="secao">
+      <CabecalhoSecao rotulo="// sys.tech.stack" titulo="Tech Stack" magenta />
 
       <div style={E.stackGrade}>
         {techStacks.map((grupo, indice) => {
@@ -358,7 +629,7 @@ function SecaoStack() {
                 backgroundImage: `linear-gradient(180deg, ${neon}0D, transparent 42%)`, // tint sutil no topo
                 ...(ultimo ? { gridColumn: '1 / -1' } : null),
               }}
-              initial={{ opacity: 0, x: -50 }}
+              initial={{ opacity: 0, x: -24 }}
               whileInView={{
                 opacity: 1,
                 x: 0,
@@ -366,7 +637,7 @@ function SecaoStack() {
                 // não contaminar o hover (que usa o transition raiz, abaixo)
                 transition: { duration: 0.5, ease: 'easeOut', delay: indice * 0.1 },
               }}
-              viewport={{ once: false, amount: 0.35 }}
+              viewport={{ once: true, amount: 0.35 }}
               whileHover="hover"
               variants={{
                 hover: {
@@ -441,13 +712,12 @@ function SecaoStack() {
 
 /* ---------- Seção 4: Executables ---------- */
 function SecaoProjetos() {
+  // Toque não tem hover: os detalhes do card ficam sempre abertos.
+  const semHover = useMidia('(hover: none)')
+
   return (
-    <section id="projetos" style={{ ...E.secao, ...E.secaoProjetos }} className="secao">
-      <RevelarAoScroll>
-        <span style={{ ...E.secaoLabel, color: NEON_MAGENTA, textShadow: '0 0 10px rgba(255, 0, 255, 0.55)' }}>
-          {'// sys.work.executables'}
-        </span>
-      </RevelarAoScroll>
+    <section id="projetos" className="secao">
+      <CabecalhoSecao rotulo="// sys.work.executables" titulo="Work" magenta />
 
       <ul style={E.listaHolo}>
         {meusProjetos.map((projeto, indice) => {
@@ -463,7 +733,7 @@ function SecaoProjetos() {
                 rel="noopener noreferrer"
                 data-umami-event={projeto.evento}
                 style={E.itemHolo}
-                initial={{ opacity: 0, y: 50 }}
+                initial={{ opacity: 0, y: 24 }}
                 whileInView={{
                   opacity: 1,
                   y: 0,
@@ -471,8 +741,9 @@ function SecaoProjetos() {
                   // fica livre para o hover responder rápido
                   transition: { duration: 0.45, ease: 'easeOut', delay: indice * 0.05 },
                 }}
-                viewport={{ once: false, amount: 0.25 }}
+                viewport={{ once: true, amount: 0.25 }}
                 whileHover="hover"
+                whileTap={{ scale: 0.99 }}
                 variants={{
                   hover: {
                     x: 6,
@@ -512,7 +783,7 @@ function SecaoProjetos() {
 
                   {/* região expansível: height 0 → auto via propagação do hover */}
                   <motion.div
-                    style={E.itemExpansao}
+                    style={semHover ? E.itemExpansaoAberta : E.itemExpansao}
                     variants={{
                       hover: {
                         height: 'auto',
@@ -581,10 +852,8 @@ function SecaoContato() {
   }
 
   return (
-    <section id="contato" style={E.secao} className="secao">
-      <RevelarAoScroll>
-        <span style={E.secaoLabel}>{'// sys.contact.protocol'}</span>
-      </RevelarAoScroll>
+    <section id="contato" className="secao">
+      <CabecalhoSecao rotulo="// sys.contact.protocol" titulo="Contact" />
 
       <RevelarAoScroll atraso={0.08}>
         {/* Janela de terminal HUD: acende inteira via :focus-within */}
@@ -740,15 +1009,36 @@ function RodapeHud() {
 }
 
 /* ---------- Orquestração da UI ---------- */
-function InterfaceUI({ progressoScroll }) {
+function InterfaceUI({ estadoScroll }) {
   const scrollRef = useRef(null)
+  const secoesRef = useRef([])
   const [secaoAtiva, setSecaoAtiva] = useState('topo')
 
-  // Progresso (0..1) do container de scroll → compartilhado com o rig 3D.
-  // useMotionValueEvent lê o MotionValue sem causar re-render por frame.
-  const { scrollYProgress } = useScroll({ container: scrollRef })
-  useMotionValueEvent(scrollYProgress, 'change', (valor) => {
-    if (progressoScroll) progressoScroll.current = valor
+  const { scrollY } = useScroll({ container: scrollRef })
+  // Véu de leitura: escurece a cena atrás do texto assim que sai do hero.
+  const opacidadeVeu = useTransform(scrollY, [0, 520], [0, 1])
+
+  useEffect(() => {
+    secoesRef.current = Array.from(scrollRef.current?.querySelectorAll('section[id]') ?? [])
+  }, [])
+
+  // Posição fracionária de seção (0 = hero … 4 = contato): alimenta a
+  // coreografia 3D (via ref, sem re-render por frame) e o destaque da nav.
+  useMotionValueEvent(scrollY, 'change', (y) => {
+    const secoes = secoesRef.current
+    if (secoes.length < 2) return
+    let posicao = secoes.length - 1
+    for (let i = 0; i < secoes.length - 1; i += 1) {
+      const inicio = secoes[i].offsetTop
+      const fim = secoes[i + 1].offsetTop
+      if (y < fim) {
+        posicao = i + Math.max(0, (y - inicio) / (fim - inicio))
+        break
+      }
+    }
+    if (estadoScroll) estadoScroll.current.secao = posicao
+    const indice = Math.min(secoes.length - 1, Math.floor(posicao + 0.4))
+    setSecaoAtiva(secoes[indice].id) // mesmo valor => React ignora
   })
 
   // Rolagem suave fica no CSS (scroll-behavior) — que também
@@ -756,22 +1046,6 @@ function InterfaceUI({ progressoScroll }) {
   const irPara = (id) => {
     document.getElementById(id)?.scrollIntoView({ block: 'start' })
   }
-
-  // Destaque automático da seção visível na navegação.
-  useEffect(() => {
-    const alvos = scrollRef.current?.querySelectorAll('section[id]')
-    if (!alvos?.length) return undefined
-    const observador = new IntersectionObserver(
-      (entradas) => {
-        entradas.forEach((entrada) => {
-          if (entrada.isIntersecting) setSecaoAtiva(entrada.target.id)
-        })
-      },
-      { threshold: 0.35 },
-    )
-    alvos.forEach((alvo) => observador.observe(alvo))
-    return () => observador.disconnect()
-  }, [])
 
   // [esc] retorna ao topo — atalho de terminal.
   useEffect(() => {
@@ -786,11 +1060,12 @@ function InterfaceUI({ progressoScroll }) {
     <MotionConfig reducedMotion="user">
       {/* Vinheta fixa: escurece bordas, abre spot na zona do personagem */}
       <div style={E.vinheta} aria-hidden="true" />
+      <motion.div className="veu-leitura" style={{ opacity: opacidadeVeu }} aria-hidden="true" />
 
       {/* Container de scroll: pointer-events AUTO é obrigatório para a
           wheel funcionar. O parallax não sofre — ele escuta a window. */}
       <div ref={scrollRef} style={E.uiScroll} className="ui-scroll">
-        <SecaoHero />
+        <SecaoHero irPara={irPara} />
         <SecaoSobre />
         <SecaoStack />
         <SecaoProjetos />
@@ -798,37 +1073,36 @@ function InterfaceUI({ progressoScroll }) {
         <RodapeHud />
       </div>
 
-      {/* Cabeçalho fixo: logo + âncoras de terminal */}
-      <header style={E.cabecalho}>
-        <motion.button
-          style={E.logo}
+      {/* Cabeçalho fixo: logo + âncoras (vira barra inferior no mobile) */}
+      <header className="cabecalho">
+        <button
+          type="button"
+          className="logo"
           onClick={() => irPara('topo')}
           data-umami-event="Header-Logo-Click"
-          whileHover={{ textShadow: `0 0 18px ${NEON_CIANO}` }}
-          whileTap={{ scale: 0.95 }}
         >
           {'DYONE.DEV //'}
-        </motion.button>
+        </button>
 
-        <nav style={E.nav} aria-label="Seções">
+        <nav className="nav" aria-label="Seções">
           {NAV_ANCORAS.map((item) => (
-            <motion.button
+            <button
               key={item.id}
+              type="button"
+              className="nav-botao"
               onClick={() => irPara(item.id)}
               data-umami-event={item.evento}
               aria-current={secaoAtiva === item.id ? 'true' : undefined}
-              style={{ ...E.navBotao, ...(secaoAtiva === item.id ? E.navBotaoAtivo : null) }}
-              whileHover={{ color: NEON_CIANO, y: -1 }}
-              whileTap={{ scale: 0.94 }}
             >
-              {item.rotulo}
-            </motion.button>
+              <span className="nav-prefixo">{'// '}</span>
+              {item.rotulo.replace('// ', '')}
+            </button>
           ))}
         </nav>
       </header>
 
-      {/* Status bar fixa */}
-      <footer style={E.statusBarra}>
+      {/* Status bar fixa (só em telas com mouse/teclado) */}
+      <footer className="status-barra">
         {'> sys.online — scroll p/ navegar · mouse: parallax · [esc] topo'}
       </footer>
 
@@ -844,23 +1118,26 @@ function InterfaceUI({ progressoScroll }) {
 export default function App() {
   // Ponte entre as duas árvores (DOM ⇄ Canvas): ref mutável escrita pelo
   // scroll da UI e lida a cada frame pelo rig — sem re-renders do React.
-  const progressoScroll = useRef(0)
+  const estadoScroll = useRef({ secao: 0 })
 
   return (
     <>
       <style>{CSS_GLOBAL}</style>
       <div style={E.camada3d}>
-        <Cena3D progressoScroll={progressoScroll} />
+        <Cena3D estadoScroll={estadoScroll} />
       </div>
-      <InterfaceUI progressoScroll={progressoScroll} />
+      <InterfaceUI estadoScroll={estadoScroll} />
     </>
   )
 }
 
 /* ============================================================
-   ESTILOS — objetos inline + micro CSS global
+   ESTILOS — objetos inline + CSS global (layout e responsivo)
+   Tokens (cores, fontes, escala) vivem em src/index.css (:root).
+   Escala tipográfica: mínimo 12px (0.75rem); texto corrido 16px.
    ============================================================ */
 const FONTE_TITULO = "'Orbitron', sans-serif"
+const FONTE_TEXTO = "'Space Grotesk', system-ui, sans-serif"
 
 const E = {
   /* ---------- camadas fixas ---------- */
@@ -893,81 +1170,14 @@ const E = {
     scrollbarColor: 'rgba(0, 255, 255, 0.45) transparent',
   },
 
-  /* ---------- seções (telas de 100vh, coluna esquerda) ---------- */
-  secao: {
-    minHeight: '100vh',
-    width: 'min(640px, 54vw)',
-    display: 'flex',
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'flex-start',
-    padding: '0 16px 0 clamp(20px, 4.5vw, 64px)',
-  },
-  secaoHero: { position: 'relative' },
-  secaoProjetos: { paddingTop: '12vh', paddingBottom: '14vh' },
-
-  /* ---------- cabeçalho / nav (fixos) ---------- */
-  cabecalho: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 30,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    padding: 'clamp(18px, 3vw, 34px) clamp(20px, 4vw, 54px)',
-    pointerEvents: 'none', // só os botões capturam clique
-  },
-  logo: {
-    pointerEvents: 'auto',
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: '0.78rem',
-    fontWeight: 600,
-    letterSpacing: '0.3em',
-    color: '#e6ebf5',
-    textShadow: '0 0 12px rgba(0, 255, 255, 0.35)',
-  },
-  nav: { display: 'flex', gap: 'clamp(16px, 2.6vw, 34px)' },
-  navBotao: {
-    pointerEvents: 'auto',
-    background: 'none',
-    border: 'none',
-    borderBottom: '1px solid transparent',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    fontSize: '0.72rem',
-    letterSpacing: '0.18em',
-    color: 'rgba(230, 235, 245, 0.55)',
-    padding: '6px 2px',
-  },
-  navBotaoAtivo: {
-    color: NEON_CIANO,
-    textShadow: '0 0 10px rgba(0, 255, 255, 0.7)',
-    borderBottom: '1px solid rgba(0, 255, 255, 0.6)',
-  },
-
   /* ---------- hero ---------- */
   overline: {
-    fontSize: '0.66rem',
+    fontSize: '0.75rem',
     fontWeight: 600,
-    letterSpacing: '0.46em',
+    letterSpacing: '0.32em',
     textTransform: 'uppercase',
     color: NEON_CIANO,
     textShadow: '0 0 10px rgba(0, 255, 255, 0.55)',
-  },
-  heroTitulo: {
-    fontFamily: FONTE_TITULO,
-    fontWeight: 900,
-    fontSize: 'clamp(2.5rem, 6.6vw, 5rem)',
-    lineHeight: 1.04,
-    letterSpacing: '0.01em',
-    color: '#ffffff',
-    textShadow: '0 0 18px rgba(0, 255, 255, 0.42), 0 0 70px rgba(0, 255, 255, 0.16)',
-    margin: '14px 0 18px',
   },
   cursorPiscante: {
     color: NEON_MAGENTA,
@@ -975,51 +1185,40 @@ const E = {
     animation: 'piscar 1.1s steps(2) infinite',
   },
   heroSubtitulo: {
-    fontSize: 'clamp(0.85rem, 1.7vw, 1.05rem)',
+    fontSize: 'clamp(0.875rem, 1.5vw, 1.0625rem)',
     fontWeight: 500,
-    letterSpacing: '0.22em',
+    letterSpacing: '0.2em',
     textTransform: 'uppercase',
     color: NEON_MAGENTA,
     textShadow: '0 0 12px rgba(255, 0, 255, 0.55)',
     margin: 0,
   },
-  indicadorScroll: {
-    position: 'absolute',
-    bottom: '7vh',
-    left: 'clamp(20px, 4.5vw, 64px)',
-    fontSize: '0.68rem',
-    letterSpacing: '0.18em',
-    color: 'rgba(0, 255, 255, 0.65)',
-    textShadow: '0 0 10px rgba(0, 255, 255, 0.45)',
-    animation: 'piscar 1.5s steps(2) infinite',
+  heroResumo: {
+    fontFamily: FONTE_TEXTO,
+    fontSize: 'clamp(1rem, 1.3vw, 1.125rem)',
+    lineHeight: 1.6,
+    color: 'rgba(230, 235, 245, 0.8)',
+    maxWidth: '44ch',
+    margin: '20px 0 0',
   },
 
-  /* ---------- labels e console ---------- */
-  secaoLabel: {
-    display: 'inline-block',
-    fontSize: '0.7rem',
-    fontWeight: 600,
-    letterSpacing: '0.34em',
-    color: NEON_CIANO,
-    textShadow: '0 0 10px rgba(0, 255, 255, 0.55)',
-    marginBottom: 10,
-  },
+  /* ---------- console (about) ---------- */
   consoleBloco: {
     borderLeft: '2px solid rgba(0, 255, 255, 0.35)',
-    paddingLeft: 20,
-    marginTop: 16,
-    maxWidth: '52ch',
+    paddingLeft: 24,
+    maxWidth: '56ch',
   },
   consolePrompt: {
-    fontSize: '0.7rem',
+    fontSize: '0.75rem',
     letterSpacing: '0.06em',
-    color: 'rgba(230, 235, 245, 0.42)',
-    margin: '0 0 12px',
+    color: 'rgba(230, 235, 245, 0.5)',
+    margin: '0 0 16px',
   },
   consoleTexto: {
-    fontSize: '0.88rem',
-    lineHeight: 1.95,
-    color: 'rgba(230, 235, 245, 0.78)',
+    fontFamily: FONTE_TEXTO,
+    fontSize: 'clamp(1rem, 1.25vw, 1.125rem)',
+    lineHeight: 1.7,
+    color: 'rgba(230, 235, 245, 0.86)',
     margin: 0,
   },
 
@@ -1028,20 +1227,19 @@ const E = {
     display: 'grid',
     // 2 colunas na lateral esquerda; colapsa para 1 em telas estreitas
     gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-    gap: 14,
-    marginTop: 18,
+    gap: 16,
     width: '100%',
   },
   stackCard: {
     position: 'relative',
     overflow: 'hidden', // contém filete, varredura e bracket no raio do card
-    backgroundColor: 'rgba(0, 0, 0, 0.4)', // (backgroundImage com tint vem por card)
+    backgroundColor: 'rgba(0, 0, 0, 0.45)', // (backgroundImage com tint vem por card)
     WebkitBackdropFilter: 'blur(8px)',
     backdropFilter: 'blur(8px)',
     borderWidth: 1,
     borderStyle: 'solid', // borderColor vem por card (ciano/magenta)
     borderRadius: 8,
-    padding: '16px 18px 18px',
+    padding: '20px 20px 24px',
   },
   stackFilete: {
     position: 'absolute',
@@ -1078,41 +1276,42 @@ const E = {
   },
   stackIndice: {
     position: 'absolute',
-    top: 12,
-    right: 14,
-    fontSize: '0.6rem',
-    letterSpacing: '0.12em',
+    top: 18,
+    right: 18,
+    fontSize: '0.75rem',
+    letterSpacing: '0.1em',
     opacity: 0.75,
     textShadow: '0 0 8px currentcolor',
   },
   stackCategoria: {
-    fontSize: '0.88rem',
+    fontSize: '0.9375rem',
     fontWeight: 600,
-    letterSpacing: '0.05em',
+    letterSpacing: '0.04em',
+    lineHeight: 1.35,
     color: '#ffffff',
-    margin: '0 0 10px',
-    paddingRight: 34, // não colide com o índice
-    paddingBottom: 9,
+    margin: '0 0 14px',
+    paddingRight: 36, // não colide com o índice
+    paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomStyle: 'solid', // borderBottomColor neon 12% vem por card
   },
   stackChips: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 8,
     listStyle: 'none',
     margin: 0,
     padding: 0,
   },
   stackChip: {
-    fontSize: '0.68rem',
-    letterSpacing: '0.04em',
+    fontSize: '0.75rem',
+    letterSpacing: '0.03em',
     lineHeight: 1,
-    padding: '5px 8px',
-    borderRadius: 3,
+    padding: '6px 10px',
+    borderRadius: 4,
     borderWidth: 1,
     borderStyle: 'solid', // borderColor/backgroundColor neon vêm por card
-    color: 'rgba(190, 225, 232, 0.78)',
+    color: 'rgba(205, 232, 238, 0.88)',
     whiteSpace: 'nowrap',
   },
 
@@ -1120,16 +1319,16 @@ const E = {
   listaHolo: {
     display: 'flex',
     flexDirection: 'column',
-    gap: 18, // módulos independentes flutuando
+    gap: 12, // módulos independentes flutuando
     listStyle: 'none',
-    margin: '18px 0 0',
+    margin: 0,
     padding: 0,
     width: '100%',
   },
   itemHolo: {
     display: 'flex',
-    gap: 14,
-    padding: '14px 16px 14px 18px',
+    gap: 16,
+    padding: '16px 16px 16px 20px',
     backgroundColor: 'rgba(10, 10, 15, 0)', // repouso transparente → 0.8 no hover
     WebkitBackdropFilter: 'blur(0px)',
     backdropFilter: 'blur(0px)', // hover anima para blur(12px)
@@ -1150,20 +1349,20 @@ const E = {
     color: 'inherit',
   },
   itemIndice: {
-    fontSize: '0.7rem',
-    paddingTop: 8,
+    fontSize: '0.75rem',
+    paddingTop: 7,
     opacity: 0.85,
     textShadow: '0 0 8px currentcolor',
   },
   itemNome: {
     fontFamily: FONTE_TITULO,
     fontWeight: 700,
-    fontSize: 'clamp(1.15rem, 2.1vw, 1.5rem)', // nome em destaque grande
-    letterSpacing: '0.05em',
+    fontSize: 'clamp(1.125rem, 2.1vw, 1.5rem)', // nome em destaque grande
+    letterSpacing: '0.04em',
     textTransform: 'uppercase',
-    lineHeight: 1.15,
-    color: 'rgba(255, 255, 255, 0.82)', // branco translúcido em repouso
-    margin: '0 0 8px',
+    lineHeight: 1.2,
+    color: 'rgba(255, 255, 255, 0.86)', // branco translúcido em repouso
+    margin: '0 0 10px',
   },
   itemTags: {
     display: 'flex',
@@ -1171,15 +1370,15 @@ const E = {
     gap: 6,
   },
   itemTag: {
-    fontSize: '0.6rem',
-    letterSpacing: '0.05em',
+    fontSize: '0.75rem',
+    letterSpacing: '0.03em',
     lineHeight: 1,
-    padding: '3px 8px',
-    borderRadius: 3,
+    padding: '5px 8px',
+    borderRadius: 4,
     borderWidth: 1,
     borderStyle: 'solid', // borderColor neon 35% vem por item
     background: 'transparent',
-    color: 'rgba(200, 232, 240, 0.8)',
+    color: 'rgba(205, 232, 240, 0.86)',
     whiteSpace: 'nowrap',
   },
   itemExpansao: {
@@ -1187,8 +1386,13 @@ const E = {
     opacity: 0,
     overflow: 'hidden',
   },
+  itemExpansaoAberta: {
+    height: 'auto', // toque não tem hover: detalhes sempre visíveis
+    opacity: 1,
+    overflow: 'hidden',
+  },
   itemExpansaoConteudo: {
-    paddingTop: 12, // padding no conteúdo interno (height anima limpo)
+    paddingTop: 14, // padding no conteúdo interno (height anima limpo)
   },
   itemExpansaoTopo: {
     display: 'flex',
@@ -1198,29 +1402,29 @@ const E = {
   },
   itemSetinha: {
     display: 'inline-block', // necessário p/ transform animar em span
-    fontSize: '0.78rem',
+    fontSize: '0.8125rem',
     opacity: 0.6,
   },
   itemTipo: {
     display: 'inline-block',
-    fontSize: '0.6rem',
+    fontSize: '0.75rem',
     fontWeight: 600,
-    letterSpacing: '0.2em',
+    letterSpacing: '0.16em',
     textTransform: 'uppercase',
   },
   itemDescricao: {
-    fontSize: '0.76rem',
-    lineHeight: 1.65,
-    color: 'rgba(226, 232, 244, 0.62)',
-    maxWidth: '52ch',
+    fontFamily: FONTE_TEXTO,
+    fontSize: '0.9375rem',
+    lineHeight: 1.6,
+    color: 'rgba(226, 232, 244, 0.74)',
+    maxWidth: '54ch',
     margin: 0,
   },
 
   /* ---------- contato (janela de terminal HUD) ---------- */
   painelTransmissao: {
-    width: 'min(540px, 100%)',
-    marginTop: 16,
-    backgroundColor: 'rgba(5, 6, 10, 0.45)',
+    width: 'min(560px, 100%)',
+    backgroundColor: 'rgba(5, 6, 10, 0.55)',
     WebkitBackdropFilter: 'blur(10px)',
     backdropFilter: 'blur(10px)',
     border: '1px solid rgba(0, 255, 255, 0.18)', // acende via :focus-within
@@ -1230,8 +1434,8 @@ const E = {
   terminalBarra: {
     display: 'flex',
     alignItems: 'center',
-    gap: 7,
-    padding: '10px 14px',
+    gap: 8,
+    padding: '12px 16px',
     background: 'rgba(0, 255, 255, 0.04)',
     borderBottom: '1px solid rgba(0, 255, 255, 0.14)',
   },
@@ -1240,18 +1444,23 @@ const E = {
     height: 8,
     borderRadius: 2,
     display: 'inline-block',
+    flexShrink: 0,
   },
   terminalTitulo: {
     marginLeft: 6,
-    fontSize: '0.66rem',
-    letterSpacing: '0.12em',
-    color: 'rgba(230, 235, 245, 0.6)',
+    fontSize: '0.75rem',
+    letterSpacing: '0.08em',
+    color: 'rgba(230, 235, 245, 0.65)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
   },
   terminalStatus: {
     marginLeft: 'auto',
-    fontSize: '0.6rem',
-    letterSpacing: '0.14em',
-    color: 'rgba(0, 255, 255, 0.65)',
+    fontSize: '0.75rem',
+    letterSpacing: '0.08em',
+    whiteSpace: 'nowrap',
+    color: 'rgba(0, 255, 255, 0.7)',
     textShadow: '0 0 8px rgba(0, 255, 255, 0.35)',
   },
   formularioHud: {
@@ -1259,83 +1468,89 @@ const E = {
     flexDirection: 'column',
     gap: 8,
     width: '100%',
-    padding: '14px 16px 16px',
+    padding: '16px 20px 20px',
   },
   formularioLinha: {
     display: 'grid',
     gridTemplateColumns: '1fr 1fr', // colapsa via .linha-campos no mobile
-    gap: 12,
+    gap: 16,
   },
   campoRotulo: {
     display: 'block',
-    fontSize: '0.66rem',
-    letterSpacing: '0.18em',
-    color: 'rgba(0, 255, 255, 0.75)',
+    fontSize: '0.75rem',
+    letterSpacing: '0.14em',
+    color: 'rgba(0, 255, 255, 0.8)',
     textShadow: '0 0 8px rgba(0, 255, 255, 0.35)',
-    margin: '8px 0 6px',
+    margin: '8px 0 8px',
   },
   campoHud: {
     width: '100%',
-    background: 'transparent',
-    border: '1px solid rgba(255, 255, 255, 0.16)', // foco neon via .campo-hud:focus
+    minHeight: 44,
+    background: 'rgba(0, 0, 0, 0.25)',
+    border: '1px solid rgba(255, 255, 255, 0.18)', // foco neon via .campo-hud:focus
     borderRadius: 4,
     padding: '10px 12px',
     fontFamily: 'inherit',
-    fontSize: '0.82rem',
+    fontSize: '1rem', // 16px: abaixo disso o iOS dá zoom ao focar
     color: '#e6ebf5',
     caretColor: NEON_CIANO,
   },
   botaoConexao: {
     width: '100%', // botão de "executar" da janela de terminal
-    marginTop: 14,
+    minHeight: 48,
+    marginTop: 16,
     padding: '13px 20px',
     backgroundColor: 'rgba(0, 255, 255, 0)', // hover anima p/ 8%
     border: '1px solid rgba(0, 255, 255, 0.55)',
     borderRadius: 4,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    fontSize: '0.78rem',
+    fontSize: '0.8125rem',
     fontWeight: 600,
-    letterSpacing: '0.18em',
+    letterSpacing: '0.16em',
     textAlign: 'center',
     color: NEON_CIANO,
   },
   statusEnvio: {
-    minHeight: 18, // reserva espaço: feedback não desloca o layout
-    margin: '6px 0 0',
-    fontSize: '0.7rem',
-    letterSpacing: '0.08em',
-    color: 'rgba(0, 255, 255, 0.8)',
+    minHeight: 20, // reserva espaço: feedback não desloca o layout
+    margin: '8px 0 0',
+    fontSize: '0.8125rem',
+    lineHeight: 1.5,
+    letterSpacing: '0.04em',
+    color: 'rgba(0, 255, 255, 0.85)',
   },
   statusEnvioErro: {
-    color: 'rgba(255, 80, 200, 0.9)',
+    color: 'rgba(255, 110, 210, 0.95)',
   },
   contatoCanais: {
-    marginTop: 30,
+    marginTop: 32,
   },
   canaisLabel: {
     display: 'block',
-    fontSize: '0.62rem',
+    fontSize: '0.75rem',
     fontWeight: 600,
-    letterSpacing: '0.3em',
-    color: 'rgba(255, 0, 255, 0.75)',
+    letterSpacing: '0.24em',
+    color: 'rgba(255, 0, 255, 0.8)',
     textShadow: '0 0 10px rgba(255, 0, 255, 0.4)',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   contatoLinks: {
     display: 'flex',
     flexWrap: 'wrap',
-    gap: 18,
+    gap: 24,
   },
   contatoLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: 44, // alvo de toque confortável
     background: 'none',
     border: 'none',
     padding: 0,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    fontSize: '0.75rem',
-    letterSpacing: '0.14em',
-    color: 'rgba(230, 235, 245, 0.6)',
+    fontSize: '0.875rem',
+    letterSpacing: '0.12em',
+    color: 'rgba(230, 235, 245, 0.7)',
     textDecoration: 'none',
   },
 
@@ -1344,26 +1559,26 @@ const E = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 14,
+    gap: 16,
     width: '100%',
     // padding-bottom extra: o conteúdo flutua acima da status bar fixa
-    padding: '26px clamp(20px, 4vw, 54px) 58px',
+    padding: '24px clamp(20px, 4vw, 56px) 64px',
     borderTop: '1px solid rgba(0, 255, 255, 0.2)', // hairline ciano 20%
     backgroundColor: 'rgba(5, 6, 10, 0.2)', // glass quase imperceptível
     WebkitBackdropFilter: 'blur(6px)',
     backdropFilter: 'blur(6px)',
-    fontSize: '0.66rem',
-    letterSpacing: '0.1em',
+    fontSize: '0.75rem',
+    letterSpacing: '0.08em',
   },
   rodapeCopyright: {
-    color: 'rgba(230, 235, 245, 0.35)',
+    color: 'rgba(230, 235, 245, 0.5)',
     textTransform: 'lowercase',
   },
   rodapeStatus: {
     display: 'inline-flex',
     alignItems: 'center',
     gap: 6,
-    color: 'rgba(230, 235, 245, 0.5)',
+    color: 'rgba(230, 235, 245, 0.6)',
   },
   rodapeLed: {
     width: 7,
@@ -1374,26 +1589,15 @@ const E = {
     animation: 'pulsar 1.6s ease-in-out infinite', // LED piscando
   },
   rodapeVoltar: {
+    minHeight: 44,
     background: 'none',
     border: 'none',
     padding: 0,
     cursor: 'pointer',
     fontFamily: 'inherit',
-    fontSize: '0.66rem',
-    letterSpacing: '0.14em',
-    color: 'rgba(230, 235, 245, 0.55)',
-  },
-
-  /* ---------- status bar ---------- */
-  statusBarra: {
-    position: 'fixed',
-    left: 'clamp(20px, 4vw, 54px)',
-    bottom: 'clamp(16px, 2.6vw, 28px)',
-    zIndex: 30,
-    fontSize: '0.62rem',
-    letterSpacing: '0.14em',
-    color: 'rgba(230, 235, 245, 0.35)',
-    pointerEvents: 'none',
+    fontSize: '0.75rem',
+    letterSpacing: '0.12em',
+    color: 'rgba(230, 235, 245, 0.65)',
   },
 
   /* ---------- loader / avisos (dentro do Canvas) ---------- */
@@ -1429,15 +1633,15 @@ const E = {
   avisoModelo: {
     width: 300,
     textAlign: 'center',
-    fontSize: '0.68rem',
-    letterSpacing: '0.08em',
+    fontSize: '0.75rem',
+    letterSpacing: '0.06em',
     lineHeight: 1.6,
-    color: 'rgba(230, 235, 245, 0.45)',
+    color: 'rgba(230, 235, 245, 0.55)',
   },
 }
 
 /* ============================================================
-   CSS mínimo — keyframes, scrollbar, focus e responsivo
+   CSS global — layout das seções, hero, nav, botões e responsivo
    ============================================================ */
 const CSS_GLOBAL = `
   @keyframes pulsar {
@@ -1448,6 +1652,11 @@ const CSS_GLOBAL = `
   @keyframes piscar {
     0%, 49% { opacity: 1; }
     50%, 100% { opacity: 0; }
+  }
+
+  @keyframes deslizar {
+    0% { transform: translateX(-110%); }
+    100% { transform: translateX(260%); }
   }
 
   /* Rolagem suave nas âncoras (// about, // work) */
@@ -1479,6 +1688,255 @@ const CSS_GLOBAL = `
     outline-offset: 3px;
   }
 
+  /* ---------- véu de leitura (aparece ao sair do hero) ---------- */
+  .veu-leitura {
+    position: fixed;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      rgba(5, 5, 5, 0.8) 0%,
+      rgba(5, 5, 5, 0.55) 36%,
+      transparent 62%
+    );
+  }
+
+  /* ---------- seções: telas de 100svh, coluna à esquerda ---------- */
+  .secao {
+    position: relative;
+    min-height: 100svh;
+    width: min(680px, 56vw);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    padding: clamp(96px, 14vh, 148px) 16px clamp(72px, 10vh, 112px) var(--gutter);
+  }
+  .secao > * { max-width: 100%; }
+
+  .secao-rotulo {
+    display: block;
+    font-size: var(--fs-xs);
+    font-weight: 600;
+    letter-spacing: 0.26em;
+    color: var(--ciano);
+    text-shadow: 0 0 10px rgba(0, 255, 255, 0.55);
+    margin-bottom: 12px;
+  }
+  .secao-rotulo--magenta {
+    color: var(--magenta);
+    text-shadow: 0 0 10px rgba(255, 0, 255, 0.55);
+  }
+  .secao-titulo {
+    font-family: var(--fonte-titulo);
+    font-weight: 700;
+    font-size: clamp(1.625rem, 3.2vw, 2.375rem);
+    line-height: 1.1;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: #ffffff;
+    margin-bottom: 32px;
+  }
+
+  /* ---------- hero ---------- */
+  .secao-hero { isolation: isolate; }
+  .hero-conteudo {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+  }
+  .hero-titulo {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 20px 0 20px;
+    font-family: var(--fonte-titulo);
+    text-transform: uppercase;
+  }
+  .hero-ola {
+    font-weight: 600;
+    font-size: clamp(0.9375rem, 1.7vw, 1.375rem);
+    letter-spacing: 0.32em;
+    color: rgba(230, 235, 245, 0.72);
+  }
+  .hero-nome-linha {
+    display: flex;
+    align-items: baseline;
+    white-space: nowrap;
+    font-weight: 900;
+    font-size: clamp(3.25rem, 8.6vw, 6.5rem);
+    line-height: 0.95;
+    letter-spacing: -0.01em;
+  }
+  .hero-nome {
+    background: linear-gradient(100deg, #ffffff 0%, ${NEON_CIANO} 48%, ${NEON_MAGENTA} 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    filter: drop-shadow(0 0 22px rgba(0, 255, 255, 0.3));
+  }
+  .hero-acoes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 32px;
+  }
+  .hero-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    list-style: none;
+    margin-top: 32px;
+  }
+  .hero-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.04em;
+    line-height: 1;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+    background: rgba(5, 6, 10, 0.45);
+    color: rgba(230, 235, 245, 0.78);
+  }
+  .hero-chip::before {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--ciano);
+    box-shadow: 0 0 8px var(--ciano);
+  }
+
+  .indicador-scroll {
+    position: absolute;
+    left: var(--gutter);
+    bottom: 72px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    color: rgba(230, 235, 245, 0.5);
+  }
+  .indicador-linha {
+    position: relative;
+    width: 64px;
+    height: 1px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.18);
+  }
+  .indicador-linha::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    width: 40%;
+    background: var(--ciano);
+    animation: deslizar 2.4s ease-in-out infinite;
+  }
+
+  /* ---------- botões ---------- */
+  .botao {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 48px;
+    padding: 0 24px;
+    border-radius: 4px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    transition: transform 0.12s ease-out, box-shadow 0.2s ease-out,
+      background-color 0.2s ease-out, border-color 0.2s ease-out;
+  }
+  .botao:active { transform: scale(0.97); }
+  .botao-primario {
+    background: var(--ciano);
+    color: #021316;
+    box-shadow: 0 0 28px -8px var(--ciano);
+  }
+  .botao-fantasma {
+    background: rgba(5, 6, 10, 0.4);
+    border-color: rgba(0, 255, 255, 0.5);
+    color: var(--ciano);
+  }
+
+  /* ---------- cabeçalho / nav ---------- */
+  .cabecalho {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: max(14px, env(safe-area-inset-top)) clamp(20px, 4vw, 56px) 22px;
+    background: linear-gradient(180deg, rgba(5, 5, 5, 0.86), rgba(5, 5, 5, 0));
+    pointer-events: none; /* só os botões capturam clique */
+  }
+  .logo {
+    pointer-events: auto;
+    min-height: 44px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    letter-spacing: 0.28em;
+    color: #e6ebf5;
+    text-shadow: 0 0 12px rgba(0, 255, 255, 0.35);
+    transition: text-shadow 0.2s ease-out;
+  }
+  .logo:active { transform: scale(0.96); }
+  .nav {
+    display: flex;
+    gap: clamp(12px, 2.2vw, 28px);
+  }
+  .nav-botao {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.16em;
+    color: rgba(230, 235, 245, 0.62);
+    box-shadow: inset 0 -1px 0 transparent;
+    transition: color 0.2s ease-out, box-shadow 0.2s ease-out;
+  }
+  .nav-botao:active { transform: scale(0.95); }
+  .nav-botao[aria-current='true'] {
+    color: var(--ciano);
+    text-shadow: 0 0 10px rgba(0, 255, 255, 0.7);
+    box-shadow: inset 0 -1px 0 rgba(0, 255, 255, 0.6);
+  }
+
+  /* ---------- status bar (desktop) ---------- */
+  .status-barra {
+    position: fixed;
+    left: clamp(20px, 4vw, 56px);
+    bottom: clamp(16px, 2.6vw, 28px);
+    z-index: 30;
+    font-size: var(--fs-xs);
+    letter-spacing: 0.12em;
+    color: rgba(230, 235, 245, 0.42);
+    pointer-events: none;
+  }
+
   /* Campos do formulário HUD: foco com brilho neon ciano */
   .campo-hud {
     transition: border-color 0.25s ease, box-shadow 0.25s ease;
@@ -1489,7 +1947,7 @@ const CSS_GLOBAL = `
     box-shadow: 0 0 16px -6px ${NEON_CIANO};
   }
   .campo-hud::placeholder {
-    color: rgba(230, 235, 245, 0.28);
+    color: rgba(230, 235, 245, 0.38);
   }
 
   /* Janela de transmissão: acende quando qualquer campo recebe foco */
@@ -1501,33 +1959,114 @@ const CSS_GLOBAL = `
     box-shadow: 0 0 38px -14px ${NEON_CIANO};
   }
 
-  /* Mobile: nome/email empilham em 1 coluna */
-  @media (max-width: 560px) {
-    .linha-campos {
-      grid-template-columns: 1fr !important;
-    }
-  }
-
   button:disabled {
     opacity: 0.55;
     cursor: progress;
   }
 
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; }
-    .ui-scroll { scroll-behavior: auto; }
+  /* Hover só onde existe hover de verdade (no toque ele "gruda") */
+  @media (hover: hover) and (pointer: fine) {
+    .logo:hover { text-shadow: 0 0 18px ${NEON_CIANO}; }
+    .nav-botao:hover { color: var(--ciano); }
+    .botao-primario:hover {
+      background: #7dffff;
+      box-shadow: 0 0 36px -6px var(--ciano);
+    }
+    .botao-fantasma:hover {
+      background: rgba(0, 255, 255, 0.1);
+      border-color: var(--ciano);
+      box-shadow: 0 0 26px -8px var(--ciano);
+    }
   }
 
-  /* Mobile: coluna de texto ocupa a largura útil; personagem ao fundo */
+  /* A status bar cita mouse e teclado: some em telas de toque */
+  @media (hover: none) {
+    .status-barra { display: none; }
+  }
+
+  /* Mobile: nome/email empilham em 1 coluna */
+  @media (max-width: 560px) {
+    .linha-campos {
+      grid-template-columns: 1fr !important;
+      gap: 0 !important;
+    }
+  }
+
+  /* ---------- mobile: texto em largura total, personagem ao fundo ---------- */
   @media (max-width: 760px) {
     .secao {
-      width: 92vw !important;
+      width: 100%;
+      padding: 96px max(20px, env(safe-area-inset-right)) 72px
+        max(20px, env(safe-area-inset-left));
     }
+    .secao-titulo { margin-bottom: 24px; }
+
+    /* Hero: personagem ocupa o topo; o texto assenta na base sobre degradê */
+    .secao-hero {
+      justify-content: flex-end;
+      padding-bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+    }
+    .secao-hero::before {
+      content: '';
+      position: absolute;
+      inset: 24% 0 0 0;
+      z-index: -1;
+      pointer-events: none;
+      background: linear-gradient(180deg, transparent, rgba(5, 5, 5, 0.72) 22%, rgba(5, 5, 5, 0.92) 50%);
+    }
+    .hero-titulo { margin: 16px 0 16px; }
+    .hero-nome-linha { font-size: clamp(3rem, 16vw, 5rem); }
+    .hero-acoes { margin-top: 24px; width: 100%; flex-wrap: nowrap; }
+    .hero-acoes .botao { flex: 1 1 0; padding: 0 12px; white-space: nowrap; }
+    .hero-chips { margin-top: 24px; }
+    .indicador-scroll { display: none; }
+
+    /* Fora do hero o véu cobre a tela toda para o texto ficar legível */
+    .veu-leitura { background: rgba(5, 5, 5, 0.82); }
+
+    /* Nav vira barra inferior, ao alcance do polegar */
+    .nav {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      gap: 0;
+      padding: 0 8px env(safe-area-inset-bottom, 0px);
+      background: rgba(5, 6, 10, 0.86);
+      -webkit-backdrop-filter: blur(14px);
+      backdrop-filter: blur(14px);
+      border-top: 1px solid rgba(0, 255, 255, 0.16);
+      pointer-events: auto;
+    }
+    .nav-botao {
+      flex: 1;
+      justify-content: center;
+      min-height: 56px;
+      letter-spacing: 0.08em;
+      box-shadow: inset 0 2px 0 transparent;
+    }
+    .nav-botao[aria-current='true'] {
+      box-shadow: inset 0 2px 0 var(--ciano);
+    }
+    .nav-prefixo { display: none; }
+    .status-barra { display: none; }
+
     .rodape-hud {
       flex-direction: column !important;
       align-items: center !important;
       text-align: center;
-      gap: 12px !important;
+      gap: 8px !important;
+      padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
     }
+  }
+
+  /* Telas baixas: enxuga o hero para o personagem continuar visível */
+  @media (max-width: 760px) and (max-height: 720px) {
+    .hero-chips { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; }
+    .ui-scroll { scroll-behavior: auto; }
   }
 `
