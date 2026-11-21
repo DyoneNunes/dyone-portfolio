@@ -7,6 +7,9 @@ export default defineConfig({
   plugins: [react(), legivelPorIa()],
   server: {
     host: true, // necessário para expor o dev server dentro do container
+    // Em produção o nginx repassa o Host público; o Vite recusa hosts que não
+    // estejam aqui (localhost e IPs são sempre aceitos).
+    allowedHosts: ['dyonedev.com.br', 'www.dyonedev.com.br'],
     proxy: {
       // O formulário chama fetch('/api/contato') relativo — o Vite repassa:
       //   local : http://localhost:3002
