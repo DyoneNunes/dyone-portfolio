@@ -1,4 +1,20 @@
+# Todo o site é público, para buscadores e para IAs.
 User-agent: *
 Allow: /
 
+# Robôs de IA liberados de forma explícita (busca, resposta e treinamento).
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: CCBot
+Allow: /
+
+# Versão em texto do site para IAs: https://dyonedev.com.br/llms.txt
 Sitemap: https://dyonedev.com.br/sitemap.xml

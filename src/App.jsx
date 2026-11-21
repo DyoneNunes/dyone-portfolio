@@ -27,6 +27,7 @@ import { Bloom, EffectComposer, ToneMapping } from '@react-three/postprocessing'
 import { ToneMappingMode } from 'postprocessing'
 import { motion, MotionConfig, useMotionValueEvent, useScroll, useTransform } from 'framer-motion'
 import { Color, MathUtils } from 'three'
+import { HERO_CHIPS, HERO_RESUMO, meusProjetos, minhasRedes, techStacks, TEXTO_SOBRE } from './conteudo.js'
 
 /* ============================================================
    CONSTANTES E DADOS
@@ -35,94 +36,11 @@ const NEON_CIANO = '#00FFFF'
 const NEON_MAGENTA = '#FF00FF'
 const MODELO_URL = '/meu_cyberpunk.glb'
 
-const meusProjetos = [
-  {
-    id: 1,
-    nome: 'NirMind',
-    descricao: 'SaaS HealthTech focado em conformidade psicossocial (NR-01).',
-    tipo: 'Startup / SaaS',
-    url: 'https://nirmind.com.br/',
-    evento: 'Projeto-NirMind-Click',
-    tags: ['HealthTech', 'SaaS'],
-  },
-  {
-    id: 7,
-    nome: 'Skills Router',
-    descricao:
-      'Servidor MCP + meta-skill que indexa, busca e carrega skills de agentes de IA sob demanda, sem estourar a janela de contexto.',
-    tipo: 'Open Source / IA',
-    url: 'https://github.com/DyoneNunes/mcp-manage-router-skill',
-    evento: 'Projeto-SkillsRouter-Click',
-    tags: ['Python', 'MCP', 'FastMCP', 'uv'],
-  },
-  {
-    id: 2,
-    nome: 'Sentinela Ambiental',
-    descricao: 'Projeto Integrador 3 (FAESA) - Monitoramento ambiental nacional em tempo real (API FIRMS NASA).',
-    tipo: 'Acadêmico / Dados',
-    url: 'https://github.com/DyoneNunes/Projeto-Integrador-III',
-    evento: 'Projeto-Sentinela-Click',
-    tags: ['Python 38%', 'TypeScript 28%', 'C++ 13%', 'Docker'],
-  },
-  {
-    id: 3,
-    nome: 'MaaS — Memory as a Service',
-    descricao: 'Projeto Integrador 3 (FAESA) - Gerenciamento de memória como serviço.',
-    tipo: 'Acadêmico / Baixo Nível',
-    url: 'https://github.com/DyoneNunes/Projeto-Integrador-III',
-    evento: 'Projeto-MaaS-Click',
-    tags: ['Python', 'TypeScript', 'C++', 'CMake'],
-  },
-  {
-    id: 4,
-    nome: 'Calmou',
-    descricao: 'Projeto Integrador 2 (FAESA) - Plataforma dedicada ao monitoramento de stress.',
-    tipo: 'Acadêmico / Backend',
-    url: 'https://github.com/DyoneNunes/banco_de_dados_calmou',
-    evento: 'Projeto-Calmou-Click',
-    tags: ['Python 95%', 'PLpgSQL', 'Docker'],
-  },
-  {
-    id: 5,
-    nome: 'MeuDim',
-    descricao: 'Aplicativo prático para controle financeiro e gestão de despesas.',
-    tipo: 'Projeto Pessoal',
-    url: 'https://meudim.com.br/',
-    evento: 'Projeto-MeuDim-Click',
-    tags: ['FinTech', 'SaaS'],
-  },
-  {
-    id: 6,
-    nome: 'Amarelo',
-    descricao: 'Implementação de Árvore Binária de Busca.',
-    tipo: 'Colaboração (FAESA)',
-    url: 'https://github.com/nicholetzs/amarelo',
-    evento: 'Projeto-Amarelo-Click',
-    tags: ['Java', 'Estrutura de Dados'],
-  },
-]
-
-const TEXTO_SOBRE =
-  'Co-founder e CTO da Quilombus Network. Mais de 9 anos escrevendo código e 5 anos moldando infraestruturas de mercado. Focado em ecossistemas escaláveis com React, FastAPI, Docker e Neo4j. Estudante de Análise e Desenvolvimento de Sistemas.'
-
-const techStacks = [
-  { categoria: 'Frontend & Mobile', tecnologias: 'HTML5, CSS3, JS, TS, React 19, Next.js 15, React Native, Flet, Tailwind, Vite' },
-  { categoria: 'Backend & Alta Performance', tecnologias: 'Python (FastAPI), Node.js 18, C++20, gRPC, Protobuf, POSIX SHM, WebSockets' },
-  { categoria: 'Bancos de Dados & ORM', tecnologias: 'PostgreSQL, Redis, Neo4j, Qdrant, ChromaDB, Prisma' },
-  { categoria: 'IA & Eng. de Prompts', tecnologias: 'LangGraph, LangChain, MCP Node, Ollama, Gemini API, Chainlit, Langfuse' },
-  { categoria: 'Infraestrutura, DevOps & Redes', tecnologias: 'Ubuntu, Linux Server, MacOS, Windows, Docker, Kubernetes, Terraform, GitHub Actions, Proxmox, Tailscale' },
-]
-
 const NAV_ANCORAS = [
   { id: 'sobre', rotulo: '// about', evento: 'Nav-About-Click' },
   { id: 'stack', rotulo: '// tech', evento: 'Nav-Tech-Click' },
   { id: 'projetos', rotulo: '// work', evento: 'Nav-Work-Click' },
   { id: 'contato', rotulo: '// contact', evento: 'Nav-Contact-Click' },
-]
-
-const minhasRedes = [
-  { rotulo: '[ github ]', url: 'https://github.com/DyoneNunes', evento: 'Contato-GitHub-Click' },
-  { rotulo: '[ linkedin ]', url: 'https://www.linkedin.com/in/dyone-andrade-0340462b6/', evento: 'Contato-LinkedIn-Click' },
 ]
 
 /* ============================================================
@@ -514,9 +432,6 @@ function CabecalhoSecao({ rotulo, titulo, magenta = false }) {
 }
 
 /* ---------- Seção 1: Hero ---------- */
-const HERO_RESUMO =
-  'Co-founder e CTO da Quilombus Network. Construo ecossistemas escaláveis com React, FastAPI, Docker e Neo4j.'
-const HERO_CHIPS = ['CTO @ Quilombus Network', '9+ anos de código', 'Vitória, ES']
 
 const HERO_PAI = {
   oculto: {},

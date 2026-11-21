@@ -1,9 +1,10 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import legivelPorIa from './vite-plugin-legivel-ia.js'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), legivelPorIa()],
   server: {
     host: true, // necessário para expor o dev server dentro do container
     proxy: {
