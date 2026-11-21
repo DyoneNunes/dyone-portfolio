@@ -46,6 +46,16 @@ const meusProjetos = [
     tags: ['HealthTech', 'SaaS'],
   },
   {
+    id: 7,
+    nome: 'Skills Router',
+    descricao:
+      'Servidor MCP + meta-skill que indexa, busca e carrega skills de agentes de IA sob demanda, sem estourar a janela de contexto.',
+    tipo: 'Open Source / IA',
+    url: 'https://github.com/DyoneNunes/mcp-manage-router-skill',
+    evento: 'Projeto-SkillsRouter-Click',
+    tags: ['Python', 'MCP', 'FastMCP', 'uv'],
+  },
+  {
     id: 2,
     nome: 'Sentinela Ambiental',
     descricao: 'Projeto Integrador 3 (FAESA) - Monitoramento ambiental nacional em tempo real (API FIRMS NASA).',
@@ -89,16 +99,6 @@ const meusProjetos = [
     url: 'https://github.com/nicholetzs/amarelo',
     evento: 'Projeto-Amarelo-Click',
     tags: ['Java', 'Estrutura de Dados'],
-  },
-  {
-    id: 7,
-    nome: 'Skills Router',
-    descricao:
-      'Servidor MCP + meta-skill que indexa, busca e carrega skills de agentes de IA sob demanda, sem estourar a janela de contexto.',
-    tipo: 'Open Source / IA',
-    url: 'https://github.com/DyoneNunes/mcp-manage-router-skill',
-    evento: 'Projeto-SkillsRouter-Click',
-    tags: ['Python', 'MCP', 'FastMCP', 'uv'],
   },
 ]
 
